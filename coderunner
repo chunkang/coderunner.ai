@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  CodeRunner.AI  ::  Launcher Script
+# ------------------------------------------------------------------------------
+#  Author  : kurapa <kurapa@kurapa.com>
+#  Purpose : Bootstrap Docker (install + start, silently) if missing, then build
+#            and run the CodeRunner container ephemerally. Zero footprint on
+#            the host once the session ends.
+# ==============================================================================
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+IMAGE_NAME="coderunner-ai:latest"
+SERVICE_NAME="coderunner"
+BOOT_TIMEOUT="${CODERUNNER_DOCKER_BOOT_TIMEOUT:-180}"   # seconds to wait for daemon
+LOG_FILE="${CODERUNNER_BOOTSTRAP_LOG:-/tmp/coderunner-bootstrap.log}"
+
+# --- pretty output ------------------------------------------------------------
+cyan()  { printf '\033[36m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
+red()   { printf '\033[31m%s\033[0m\n' "$*" 1>&2; }
+say()   { cyan "▶ $*"; }
+ok()    { green "✔ $*"; }
+warn()  { yellow "! $*"; }
+die()   { red "✖ $*"; exit 1; }
+
+# All silent-install / silent-start noise is redirected here so the terminal
+# stays clean. On failure we tell the user where to look.
+silent() { "$@" >>"$LOG_FILE" 2>&1; }
+
+OS="$(uname -s)"
+
+# --- 1. install Docker if missing (silent) ------------------------------------
+install_docker_macos() {
+  say "Installing Docker Desktop silently (this may take a few minutes)…"
+
+  if command -v brew >/dev/null 2>&1; then
+    if silent brew install --cask --no-quarantine docker; then
+      ok "Docker Desktop installed via Homebrew."
+      return 0
+    fi
+    warn "Homebrew install failed — falling back to direct download."
+  fi
+
+  # Direct DMG install (silent). Requires sudo for /Applications write on some
+  # setups; we try user-writable first.
+  local arch dmg mount
+  arch="$(uname -m)"
+  case "$arch" in
+    arm64)  dmg="https://desktop.docker.com/mac/main/arm64/Docker.dmg" ;;
+    x86_64) dmg="https://desktop.docker.com/mac/main/amd64/Docker.dmg" ;;
+    *)      die "Unsupported macOS architecture: $arch" ;;
+  esac
+
+  local tmp
+  tmp="$(mktemp -d)"
+  silent curl -fsSL "$dmg" -o "$tmp/Docker.dmg" \
+    || die "Failed to download Docker.dmg (see $LOG_FILE)."
+  mount="$(hdiutil attach -nobrowse -quiet "$tmp/Docker.dmg" | awk '/Volumes/ {print $3; exit}')"
+  [[ -n "$mount" ]] || die "Failed to mount Docker.dmg."
+  # cp is faster than the Docker.app installer and doesn't spawn UI.
+  silent sudo -n cp -R "$mount/Docker.app" /Applications/ \
+    || silent cp -R "$mount/Docker.app" /Applications/ \
+    || die "Failed to copy Docker.app into /Applications (see $LOG_FILE)."
+  silent hdiutil detach -quiet "$mount" || true
+  rm -rf "$tmp"
+  ok "Docker Desktop installed."
+}
+
+install_docker_linux() {
+  say "Installing Docker Engine silently via get.docker.com…"
+  # Official convenience script. Needs root; we use sudo -n so the user isn't
+  # prompted mid-flow — if it fails, we tell them what to do.
+  if ! silent curl -fsSL https://get.docker.com -o /tmp/get-docker.sh; then
+    die "Failed to fetch get.docker.com installer (see $LOG_FILE)."
+  fi
+  if ! silent sudo -n sh /tmp/get-docker.sh; then
+    die "Docker install requires passwordless sudo. Run: sudo sh /tmp/get-docker.sh"
+  fi
+  # Add current user to docker group so we don't need sudo for docker calls.
+  silent sudo -n usermod -aG docker "$USER" || true
+  ok "Docker Engine installed."
+}
+
+ensure_docker_installed() {
+  if command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  case "$OS" in
+    Darwin) install_docker_macos ;;
+    Linux)  install_docker_linux ;;
+    *)      die "Automatic Docker install is not supported on $OS. Install Docker manually." ;;
+  esac
+  command -v docker >/dev/null 2>&1 \
+    || die "Docker binary still not on PATH after install (see $LOG_FILE)."
+}
+
+# --- 2. start Docker daemon if not running (silent) ---------------------------
+docker_up() { docker info >/dev/null 2>&1; }
+
+wait_for_docker() {
+  local deadline=$(( SECONDS + BOOT_TIMEOUT ))
+  while (( SECONDS < deadline )); do
+    if docker_up; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
+start_docker_macos() {
+  say "Starting Docker Desktop (headless boot)…"
+  # `-g` = don't bring app to foreground, `-j` = launch even if hidden.
+  silent open -g -j -a Docker || silent open -g -a Docker || true
+  wait_for_docker || die "Docker Desktop did not become ready within ${BOOT_TIMEOUT}s (see $LOG_FILE)."
+  ok "Docker daemon is up."
+}
+
+start_docker_linux() {
+  say "Starting Docker daemon…"
+  if command -v systemctl >/dev/null 2>&1; then
+    silent sudo -n systemctl start docker \
+      || die "Could not start docker.service (need passwordless sudo?)."
+  elif command -v service >/dev/null 2>&1; then
+    silent sudo -n service docker start \
+      || die "Could not start docker service."
+  else
+    die "No systemctl/service found to start Docker."
+  fi
+  wait_for_docker || die "Docker daemon did not become ready within ${BOOT_TIMEOUT}s."
+  ok "Docker daemon is up."
+}
+
+ensure_docker_running() {
+  if docker_up; then return 0; fi
+  case "$OS" in
+    Darwin) start_docker_macos ;;
+    Linux)  start_docker_linux ;;
+    *)      die "Cannot auto-start Docker on $OS." ;;
+  esac
+}
+
+# --- 3. detect compose command ------------------------------------------------
+detect_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+  else
+    die "docker compose plugin missing. Reinstall Docker Desktop or 'apt install docker-compose-plugin'."
+  fi
+}
+
+# --- 4. bootstrap sequence ----------------------------------------------------
+: >"$LOG_FILE" || true
+ensure_docker_installed
+ensure_docker_running
+detect_compose
+
+# --- 5. build image on first run (or when missing) ----------------------------
+if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+  say "Building ${IMAGE_NAME} (first run)…"
+  "${COMPOSE[@]}" build "$SERVICE_NAME"
+  ok "Build complete."
+fi
+
+# --- 5b. start bundled Ollama service and pull model on first run -------------
+ensure_ollama_service() {
+  # Bring up the ollama sidecar (idempotent; no-op if already running).
+  say "Starting bundled Ollama service…"
+  silent "${COMPOSE[@]}" up -d ollama || die "Failed to start ollama service (see $LOG_FILE)."
+
+  # Wait until healthy.
+  local deadline=$(( SECONDS + 60 ))
+  while (( SECONDS < deadline )); do
+    local status
+    status="$(docker inspect --format='{{.State.Health.Status}}' coderunner-ollama 2>/dev/null || echo 'starting')"
+    [[ "$status" == "healthy" ]] && { ok "Ollama service is healthy."; break; }
+    sleep 2
+  done
+
+  # Pull model if not already present in the ollama volume.
+  local model="${CODERUNNER_MODEL:-llama3.1:8b}"
+  if ! docker exec coderunner-ollama ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$model"; then
+    say "Pulling model '${model}' (first run — this may take several GB)…"
+    "${COMPOSE[@]}" run --rm model-pull \
+      || die "Failed to pull model '${model}' (see $LOG_FILE)."
+    ok "Model '${model}' ready."
+  fi
+}
+ensure_ollama_service
+
+# --- 6. graceful shutdown -----------------------------------------------------
+cleanup() {
+  # `compose run --rm` removes the container; this belt-and-braces sweep
+  # catches strays from a crash mid-run.
+  docker rm -f "$SERVICE_NAME" >/dev/null 2>&1 || true
+  # Stop the ollama sidecar so it releases RAM/CPU after we exit. Volume is
+  # preserved — model isn't re-downloaded next launch. Overrides the compose
+  # `restart: unless-stopped` policy so a Docker restart also leaves it down.
+  silent "${COMPOSE[@]}" stop ollama || true
+}
+trap cleanup EXIT INT TERM
+
+# --- 7. --doctor subcommand ---------------------------------------------------
+if [[ "${1:-}" == "--doctor" ]]; then
+  say "Diagnostic report"
+  printf '  os               : %s (%s)\n' "$OS" "$(uname -m)"
+  printf '  docker binary    : %s\n'      "$(command -v docker || echo 'MISSING')"
+  printf '  docker version   : %s\n'      "$(docker --version 2>/dev/null || echo 'n/a')"
+  printf '  compose command  : %s\n'      "${COMPOSE[*]}"
+  printf '  daemon reachable : %s\n'      "$(docker_up && echo yes || echo NO)"
+  printf '  image present    : %s\n'      "$(docker image inspect "$IMAGE_NAME" >/dev/null 2>&1 && echo yes || echo no)"
+
+  ollama_running="$(docker ps --filter name=coderunner-ollama --format '{{.Status}}' 2>/dev/null || echo 'not running')"
+  printf '  ollama service   : %s\n' "${ollama_running:-not running}"
+  ollama_models="$(docker exec coderunner-ollama ollama list 2>/dev/null | awk 'NR>1 {print $1}' | paste -sd, - || echo 'n/a')"
+  printf '  ollama models    : %s\n' "${ollama_models:-none}"
+  printf '  ollama volume    : %s\n' "$(docker volume inspect coderunner_ollama_data --format '{{.Mountpoint}}' 2>/dev/null || echo 'missing')"
+  printf '  bootstrap log    : %s\n' "$LOG_FILE"
+  exit 0
+fi
+
+# --- 8. run ephemerally -------------------------------------------------------
+# No `exec` here: exec replaces this shell and would skip the EXIT trap above,
+# leaving the ollama sidecar running (holding RAM) after the app closes.
+"${COMPOSE[@]}" run --rm --name "$SERVICE_NAME" "$SERVICE_NAME" "$@"

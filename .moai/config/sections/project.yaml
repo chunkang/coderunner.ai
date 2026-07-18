@@ -1,0 +1,9 @@
+project:
+  name: CodeRunner.AI
+  description: ''
+  type: ''
+  locale: '{{LOCALE}}'
+  created_at: '2026-07-17T20:17:40.199197Z'
+  initialized: 'true'
+github:
+  profile_name: ''

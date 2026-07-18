@@ -1,0 +1,66 @@
+# ==============================================================================
+#  CodeRunner.AI  ::  docker-compose orchestration
+# ------------------------------------------------------------------------------
+#  Author  : kurapa <kurapa@kurapa.com>
+#  Purpose : Two-service stack — the CodeRunner terminal app + a self-hosted
+#            Ollama server. No dependency on host-installed Ollama.
+#
+#            `coderunner` runs ephemerally (--rm) so it leaves no residue.
+#            `ollama`     is a long-lived companion service that holds the
+#                         downloaded model in a named volume across sessions
+#                         (so we don't re-download on every launch).
+# ==============================================================================
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: coderunner-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    # Kept internal to the compose network — no host port exposure needed.
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # One-shot service that pulls the model on first run then exits.
+  # Runs `docker compose run --rm model-pull` from the launcher.
+  model-pull:
+    image: ollama/ollama:latest
+    container_name: coderunner-model-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      CODERUNNER_MODEL: ${CODERUNNER_MODEL:-llama3.1:8b}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['ollama pull "$$CODERUNNER_MODEL"']
+    restart: "no"
+
+  coderunner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coderunner-ai:latest
+    container_name: coderunner
+    depends_on:
+      ollama:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    init: true
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      CODERUNNER_MODEL: ${CODERUNNER_MODEL:-llama3.1:8b}
+      CODERUNNER_TIMEOUT: ${CODERUNNER_TIMEOUT:-30}
+      CODERUNNER_MAX_RETRIES: ${CODERUNNER_MAX_RETRIES:-3}
+      TERM: xterm-256color
+    restart: "no"
+
+volumes:
+  ollama_data:
+    name: coderunner_ollama_data
