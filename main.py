@@ -39,9 +39,22 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
-from rich.spinner import Spinner
 from rich.syntax import Syntax
 from rich.text import Text
+
+from memory import (
+    MemoryConfig,
+    format_recall_block,
+    handle_memory_command,
+    inject_recall,
+)
+from recall import (
+    recall_for_task,
+    remember_success,
+    retrieval_degraded,
+    vector_for_capture,
+)
+from vectorstore import VectorStore
 
 
 # ------------------------------------------------------------------------------
@@ -56,6 +69,29 @@ HISTORY_FILE = Path(os.environ.get("CODERUNNER_HISTORY", str(Path.home() / ".cod
 HISTORY_MAX = 1000
 
 TOOLS_MODULE = Path(__file__).with_name("tools.py")
+
+# ------------------------------------------------------------------------------
+# Solution memory configuration (SPEC-MEMORY-001)
+# ------------------------------------------------------------------------------
+# Read once at import, matching the convention above, but parsed through
+# validating helpers that catch ValueError, clamp to a documented range and fall
+# back to the default.
+#
+# Deliberately NOT the pattern at :53-54. Those use a bare
+# int(os.environ.get(...)) with no try/except: a non-numeric value raises at
+# import time, before the banner and before preflight(), showing the user a raw
+# traceback from a container that exits immediately. Retrofitting those two is
+# out of scope for this SPEC.
+MEMORY_CFG = MemoryConfig.from_env(MODEL_NAME)
+MEMORY_ENABLED = MEMORY_CFG.enabled
+# The `:latest` suffix is required, not cosmetic: coderunner:176 matches with
+# `grep -qx` against `ollama list`, which prints fully-qualified tags, so a bare
+# name would never match and would re-pull 274 MB on every launch.
+EMBED_MODEL = MEMORY_CFG.embed_model
+MEMORY_DB = MEMORY_CFG.db_path
+MEMORY_TOP_K = MEMORY_CFG.top_k
+MEMORY_MIN_SIM = MEMORY_CFG.min_sim
+MEMORY_MAX_RECORDS = MEMORY_CFG.max_records
 
 console = Console()
 
@@ -138,8 +174,15 @@ class Conversation:
 # ------------------------------------------------------------------------------
 
 
-def stream_llm(client: ollama.Client, conv: Conversation) -> Iterator[str]:
-    stream = client.chat(model=MODEL_NAME, messages=conv.messages, stream=True)
+def stream_llm(client: ollama.Client, messages: list[dict]) -> Iterator[str]:
+    """Stream one completion for an explicit message list.
+
+    Takes the messages rather than the Conversation so that a caller can send a
+    per-request list — specifically one carrying an ephemeral recall block —
+    without mutating `Conversation.messages`. It also makes this function
+    testable with a fake client, which it has never been.
+    """
+    stream = client.chat(model=MODEL_NAME, messages=messages, stream=True)
     for chunk in stream:
         piece = chunk.get("message", {}).get("content", "")
         if piece:
@@ -296,7 +339,7 @@ def show_banner() -> None:
     banner.append(".AI  ", style="bold white")
     banner.append("— agentic Python interpreter powered by LLaMA", style="dim")
     subtitle = Text()
-    subtitle.append(f"model: ", style="dim")
+    subtitle.append("model: ", style="dim")
     subtitle.append(MODEL_NAME, style="bold cyan")
     subtitle.append("   host: ", style="dim")
     subtitle.append(OLLAMA_HOST, style="cyan")
@@ -319,15 +362,116 @@ def show_banner() -> None:
 # ------------------------------------------------------------------------------
 
 
-def agentic_turn(client: ollama.Client, conv: Conversation, user_input: str) -> None:
+def _open_memory_store() -> VectorStore | None:
+    """Open the solution store once per session, or degrade to None (M5)."""
+    if not MEMORY_ENABLED:
+        return None
+    store = VectorStore.open(MEMORY_DB)
+    if store is None:
+        status(
+            "🧠",
+            "Memory",
+            f"Solution memory unavailable at {MEMORY_DB} — continuing without it.",
+            "yellow",
+        )
+    return store
+
+
+# M5 requires exactly ONE status line per turn when the subsystem degrades. On a
+# degraded session both retrieval and capture fail every turn, so reporting each
+# separately would double the noise forever. The single wording covers both.
+MEMORY_DEGRADED_MSG = "Unavailable this turn (embedding backend); continuing without memory."
+MEMORY_UNWRITABLE_MSG = "Could not save this solution (store unwritable); continuing without memory."
+
+
+def _warn_memory(message: str) -> bool:
+    """Emit the one degradation line for this turn. Always returns True."""
+    status("🧠", "Memory", message, "yellow")
+    return True
+
+
+def _capture_turn(
+    client: ollama.Client,
+    store: VectorStore | None,
+    task: str,
+    thought: str,
+    code: str,
+    stdout: str,
+    recall_result,
+    already_warned: bool,
+) -> bool:
+    """Persist one successful turn. Returns True if a warning was emitted here.
+
+    ``already_warned`` carries the retrieval outcome forward so a turn in which
+    BOTH retrieval and capture fail reports once, not twice.
+    """
+    if store is None or not MEMORY_ENABLED:
+        return False  # deliberately off, or reported once at startup
+
+    vector = vector_for_capture(client, store, task, MEMORY_CFG, recall_result)
+    if not vector:
+        # Either retrieval's embed already failed (and was reported), or the
+        # cold-start embed just failed here.
+        return False if already_warned else _warn_memory(MEMORY_DEGRADED_MSG)
+
+    if remember_success(store, task, thought, code, stdout, vector, MEMORY_CFG):
+        status("🧠", "Memory", "Captured this solution for future turns.", "green")
+        return False
+
+    # The store rejected the write — unwritable, locked, or corrupt. Silent
+    # until the smoke run caught it.
+    return False if already_warned else _warn_memory(MEMORY_UNWRITABLE_MSG)
+
+
+def agentic_turn(
+    client: ollama.Client,
+    conv: Conversation,
+    user_input: str,
+    store: VectorStore | None = None,
+) -> None:
     conv.user(user_input)
+
+    # Retrieval runs ONCE per turn, before the loop, so the embedding round trip
+    # is not paid per attempt. The resulting vector is cached and reused by the
+    # capture below, so a turn costs exactly one embed call, not two (M2).
+    recall_result = recall_for_task(client, store, user_input, MEMORY_CFG)
+    recall_block: str | None = None
+
+    # At most one degradation line per turn, tracked from here through capture.
+    # Silent degradation is risk R7: without this the user has no way to learn
+    # that memory has stopped working, because every turn still looks correct.
+    memory_warned = retrieval_degraded(store, user_input, MEMORY_CFG, recall_result)
+    if memory_warned:
+        _warn_memory(MEMORY_DEGRADED_MSG)
+    elif recall_result is not None and recall_result.record is not None:
+        recall_block = format_recall_block(recall_result.record)
+        status(
+            "🧠",
+            "Memory",
+            f"Recalled a similar solved task (similarity {recall_result.similarity:.2f}).",
+            "green",
+        )
 
     for attempt in range(1, MAX_RETRIES + 1):
         status("🔄", "LLaMA", f"Analyzing request and designing solution (attempt {attempt}/{MAX_RETRIES})…", "cyan")
+
+        # Attempt 1 only (C8). On a retry the conversation already contains the
+        # failed attempt, and re-injecting the same example risks re-anchoring
+        # the model on an approach that has just been shown not to work.
+        #
+        # inject_recall returns a NEW list; conv.messages is never mutated, so
+        # the block is ephemeral to this one request and cannot accumulate
+        # across turns.
+        request_messages = (
+            inject_recall(conv.messages, recall_block)
+            if attempt == 1 and recall_block is not None
+            else conv.messages
+        )
+
         thought = render_stream(
             title=f"Thought · attempt {attempt}",
             style="cyan",
-            token_iter=stream_llm(client, conv),
+            token_iter=stream_llm(client, request_messages),
         )
         conv.assistant(thought)
 
@@ -354,12 +498,29 @@ def agentic_turn(client: ollama.Client, conv: Conversation, user_input: str) -> 
             conv.user(feedback)
 
             status("💬", "LLaMA", "Final response streaming…", "magenta")
+            # No recall block on the grounded pass: it only needs the stdout.
             answer = render_stream(
                 title="Answer",
                 style="magenta",
-                token_iter=stream_llm(client, conv),
+                token_iter=stream_llm(client, conv.messages),
             )
             conv.assistant(answer)
+
+            # Capture last, after the answer has streamed, so the embed/write
+            # latency lands at the end of the turn rather than stalling
+            # mid-flow. Captured on a retrieval MISS too — a miss is exactly
+            # what a new task looks like, and skipping it would freeze the
+            # store at its first record (M3).
+            _capture_turn(
+                client,
+                store,
+                user_input,
+                thought,
+                code,
+                result.stdout,
+                recall_result,
+                memory_warned,
+            )
             return
 
         status(
@@ -469,6 +630,10 @@ def repl() -> None:
     conv = Conversation()
     conv.system(SYSTEM_PROMPT)
 
+    # Opened once for the session and threaded into every turn. None means the
+    # feature is off or unavailable, and every downstream call handles that.
+    store = _open_memory_store()
+
     while True:
         console.print(Rule(style="dim"))
         try:
@@ -482,15 +647,21 @@ def repl() -> None:
             continue
         if stripped.lower() in {"/exit", "/quit", ":q"}:
             break
+        # Handled locally, beside the exit words: /memory never reaches the model.
+        if handle_memory_command(store, stripped, lambda line: console.print(line), MEMORY_CFG):
+            continue
 
         try:
-            agentic_turn(client, conv, stripped)
+            agentic_turn(client, conv, stripped, store)
         except ollama.ResponseError as err:
             status("❌", "LLaMA", f"API error: {err}", "red")
         except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as err:
             console.print(_connection_help_panel(err))
         except KeyboardInterrupt:
             status("⏹", "System", "Turn interrupted.", "yellow")
+
+    if store is not None:
+        store.close()
 
     console.print(Panel(Text("Goodbye.", style="bold magenta"), border_style="magenta"))
 
