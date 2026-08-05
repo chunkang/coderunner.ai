@@ -1,0 +1,60 @@
+# ==============================================================================
+#  CodeRunner.AI  ::  ruff configuration
+# ------------------------------------------------------------------------------
+#  Until this file existed the project had no declared lint standard, so ruff
+#  applied its own defaults and reported ~590 findings — most of them against
+#  code that is deliberate. This file states what the project actually holds
+#  itself to, so that a non-empty ruff run means something.
+# ==============================================================================
+
+target-version = "py311"
+line-length = 100
+
+# .claude/ and .moai/ are vendored MoAI-ADK tooling, re-scaffolded from upstream
+# templates. Fixes applied there do not survive a re-scaffold; do not lint them.
+extend-exclude = [".claude", ".moai", ".moai-backups"]
+
+[lint]
+select = [
+    "F",    # pyflakes
+    "E",    # pycodestyle errors — includes E402, which the test suite relies on
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "A",    # flake8-builtins — includes A002, which conftest.py relies on
+    "B",    # flake8-bugbear
+    "S",    # flake8-bandit
+    "BLE",  # flake8-blind-except
+    "PIE",
+    "RUF",
+]
+
+[lint.per-file-ignores]
+# ---------------------------------------------------------------------------
+#  The degradation path is the design, not an oversight.
+#
+#  SPEC-MEMORY-001 M5 requires that solution memory never raise into the REPL:
+#  any failure in the subsystem yields exactly one status line, and the turn
+#  then proceeds identically to a build without the feature (README, "When it
+#  breaks"). AC-5 depends on this. A narrow `except` would let an unanticipated
+#  pymilvus or ollama error escape and take the session down — precisely the
+#  outcome these rules exist to prevent, inverted.
+#
+#  BLE001 = blind `except Exception`;  S110 = `try`/`except`/`pass`.
+# ---------------------------------------------------------------------------
+"memory.py" = ["BLE001"]
+"recall.py" = ["BLE001"]
+"vectorstore.py" = ["BLE001", "S110"]
+"conftest.py" = ["BLE001", "S101"]  # S101: assert in a fixture precondition
+
+# S603: running the model's generated script under `python -I` is the entire
+#       purpose of the executor, not an unvetted subprocess call.
+# RUF001: the `i` glyph in the TUI status line is intentional.
+"main.py" = ["BLE001", "S110", "S603", "RUF001"]
+
+# S310: web_search() is deliberately stdlib-only (no requests dependency), so
+#       urllib.request.urlopen is the mechanism, with a fixed https URL.
+"tools.py" = ["BLE001", "S110", "S310"]
+
+# `assert` is the point of a test.
+"tests/*" = ["S101"]
