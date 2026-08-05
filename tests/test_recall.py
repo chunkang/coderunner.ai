@@ -21,10 +21,8 @@ import pytest
 
 import memory
 import recall
-from conftest import FLOAT32_TOL, FakeEmbedClient
+from conftest import CHAT_MODEL, EMBED_MODEL, FLOAT32_TOL, FakeEmbedClient, make_record
 from memory import MemoryConfig
-
-from conftest import CHAT_MODEL, EMBED_MODEL, make_record
 
 if TYPE_CHECKING:
     from vectorstore import VectorStore

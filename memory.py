@@ -27,7 +27,7 @@ import math
 import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -214,7 +214,10 @@ def dot(left: Sequence[float], right: Sequence[float]) -> float:
     """
     if len(left) != len(right):
         return 0.0
-    return math.fsum(a * b for a, b in zip(left, right))
+    # strict=False is deliberate: the guard above already establishes equal
+    # length, and `strict=True` would add a raise path to a function the M5
+    # contract forbids from raising.
+    return math.fsum(a * b for a, b in zip(left, right, strict=False))
 
 
 # ==============================================================================
@@ -238,7 +241,7 @@ def task_hash(task: str) -> str:
 
 def utc_now_iso() -> str:
     """Current UTC time as an ISO-8601 string, for the ``created_at`` column."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def truncate(text: str, limit: int) -> str:
@@ -402,7 +405,7 @@ def inject_recall(messages: list[dict], block: str) -> list[dict]:
     recall_message = {"role": "system", "content": block}
     if not messages:
         return [recall_message]
-    return messages[:-1] + [recall_message] + messages[-1:]
+    return [*messages[:-1], recall_message, *messages[-1:]]
 
 
 # ==============================================================================

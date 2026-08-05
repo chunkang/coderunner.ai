@@ -14,7 +14,6 @@ import re
 import urllib.parse
 import urllib.request
 
-
 _UA = "Mozilla/5.0 (CodeRunner.AI/1.0 stdlib-agent)"
 _TIMEOUT = 8
 

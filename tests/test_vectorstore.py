@@ -21,10 +21,10 @@ import pytest
 
 pytest.importorskip("milvus_lite", reason="vectorstore.py needs pymilvus[milvus_lite]")
 
-import memory  # noqa: E402
-import vectorstore  # noqa: E402
-from conftest import CHAT_MODEL, EMBED_MODEL, FLOAT32_TOL, make_record  # noqa: E402
-from vectorstore import VectorStore  # noqa: E402
+import memory
+import vectorstore
+from conftest import CHAT_MODEL, EMBED_MODEL, FLOAT32_TOL, make_record
+from vectorstore import VectorStore
 
 
 def unit(*values: float) -> list[float]:
@@ -348,7 +348,10 @@ def test_insert_of_a_mismatched_dim_degrades_rather_than_raising(
     existing records intact.
     """
     assert tmp_store.insert(make_record(embedding=[1.0, 0.0, 0.0]), max_records=500)
-    assert tmp_store.insert(make_record(task="other", embedding=[1.0, 0.0]), max_records=500) is False
+    assert (
+        tmp_store.insert(make_record(task="other", embedding=[1.0, 0.0]), max_records=500)
+        is False
+    )
     assert tmp_store.count() == 1
 
 
@@ -488,7 +491,7 @@ def test_dedupe_replaces_in_place_and_carries_seq_and_created_at_forward(
     for index in range(5):
         tmp_store.insert(make_record(task=f"task {index}"), max_records=500)
 
-    target = [record for record in tmp_store.recent(5) if record.task == "task 4"][0]
+    target = next(record for record in tmp_store.recent(5) if record.task == "task 4")
     assert target.id == 4
     assert target.created_at == "2026-08-02T00:00:00+00:00"
 

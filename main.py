@@ -28,9 +28,9 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Iterator
 
 import httpx
 import ollama
@@ -55,7 +55,6 @@ from recall import (
     vector_for_capture,
 )
 from vectorstore import VectorStore
-
 
 # ------------------------------------------------------------------------------
 # Configuration
@@ -322,7 +321,11 @@ def show_exec_result(result: ExecResult) -> None:
         )
     else:
         err = result.stderr.strip() or "(no stderr)"
-        title = "Execution TIMEOUT" if result.timed_out else f"Execution FAILED (rc={result.returncode})"
+        title = (
+            "Execution TIMEOUT"
+            if result.timed_out
+            else f"Execution FAILED (rc={result.returncode})"
+        )
         console.print(
             Panel(
                 Text(err, style="red"),
@@ -381,7 +384,9 @@ def _open_memory_store() -> VectorStore | None:
 # degraded session both retrieval and capture fail every turn, so reporting each
 # separately would double the noise forever. The single wording covers both.
 MEMORY_DEGRADED_MSG = "Unavailable this turn (embedding backend); continuing without memory."
-MEMORY_UNWRITABLE_MSG = "Could not save this solution (store unwritable); continuing without memory."
+MEMORY_UNWRITABLE_MSG = (
+    "Could not save this solution (store unwritable); continuing without memory."
+)
 
 
 def _warn_memory(message: str) -> bool:
@@ -453,7 +458,12 @@ def agentic_turn(
         )
 
     for attempt in range(1, MAX_RETRIES + 1):
-        status("🔄", "LLaMA", f"Analyzing request and designing solution (attempt {attempt}/{MAX_RETRIES})…", "cyan")
+        status(
+            "🔄",
+            "LLaMA",
+            f"Analyzing request and designing solution (attempt {attempt}/{MAX_RETRIES})…",
+            "cyan",
+        )
 
         # Attempt 1 only (C8). On a retry the conversation already contains the
         # failed attempt, and re-injecting the same example risks re-anchoring

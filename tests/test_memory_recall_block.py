@@ -18,7 +18,6 @@ import memory
 from conftest import CHAT_MODEL, EMBED_MODEL
 from memory import SolutionRecord
 
-
 # ------------------------------------------------------------------------------
 # format_recall_block()  — M4 framing
 # ------------------------------------------------------------------------------
@@ -120,10 +119,10 @@ def test_inject_recall_does_not_mutate_the_input_in_length_or_identity(
     result = memory.inject_recall(conversation_messages, "BLOCK")
 
     assert len(conversation_messages) == len(snapshot)
-    assert all(a is b for a, b in zip(conversation_messages, snapshot))
+    assert all(a is b for a, b in zip(conversation_messages, snapshot, strict=True))
 
     carried = result[:-2] + result[-1:]
-    assert all(a is b for a, b in zip(carried, conversation_messages))
+    assert all(a is b for a, b in zip(carried, conversation_messages, strict=True))
 
 
 def test_inject_recall_is_pure_and_repeatable(conversation_messages: list[dict]) -> None:
@@ -139,8 +138,12 @@ def test_inject_recall_matches_the_documented_slice_expression(
     # plan.md 6 states the request list verbatim; assert the identity rather
     # than trusting the prose.
     recall_msg = {"role": "system", "content": "BLOCK"}
+    # The slice form is kept deliberately: this test exists to mirror the
+    # expression plan.md 6 states verbatim, independently of whatever form
+    # inject_recall happens to use internally. RUF005 would rewrite it to
+    # unpacking and lose that correspondence.
     expected = (
-        conversation_messages[:-1] + [recall_msg] + conversation_messages[-1:]
+        conversation_messages[:-1] + [recall_msg] + conversation_messages[-1:]  # noqa: RUF005
     )
     assert memory.inject_recall(conversation_messages, "BLOCK") == expected
 

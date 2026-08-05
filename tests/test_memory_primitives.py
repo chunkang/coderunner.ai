@@ -16,7 +16,6 @@ import pytest
 import memory
 from conftest import FLOAT32_TOL
 
-
 # ------------------------------------------------------------------------------
 # memory.py must stay free of third-party imports (plan.md 1.1)
 # ------------------------------------------------------------------------------
@@ -67,13 +66,17 @@ def test_memory_module_imports_only_stdlib() -> None:
         ("off", False),
     ],
 )
-def test_env_bool_recognised_values(monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool) -> None:
+def test_env_bool_recognised_values(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool
+) -> None:
     monkeypatch.setenv("CR_TEST_BOOL", raw)
     assert memory.env_bool("CR_TEST_BOOL", not expected) is expected
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "maybe", "2", "yeah"])
-def test_env_bool_unparseable_falls_back_to_default(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+def test_env_bool_unparseable_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
     monkeypatch.setenv("CR_TEST_BOOL", raw)
     assert memory.env_bool("CR_TEST_BOOL", True) is True
     assert memory.env_bool("CR_TEST_BOOL", False) is False

@@ -26,11 +26,10 @@ pytest.importorskip("rich", reason="main.py needs rich; run in-container")
 pytest.importorskip("ollama", reason="main.py needs ollama; run in-container")
 pytest.importorskip("httpx", reason="main.py needs httpx; run in-container")
 
-import main  # noqa: E402
-import memory  # noqa: E402
-from vectorstore import VectorStore  # noqa: E402
-
-from conftest import make_record  # noqa: E402
+import main
+import memory
+from conftest import make_record
+from vectorstore import VectorStore
 
 
 class FakeClient:
@@ -58,6 +57,8 @@ class FakeClient:
         text = self.responses.pop(0) if self.responses else "Answer: done"
         return iter([{"message": {"content": text}}])
 
+    # `input` mirrors ollama's embed() signature; renaming it here would stop
+    # this fake standing in for the real client.
     def embed(self, model: str = "", input: Any = "", keep_alive: Any = None) -> dict:  # noqa: A002
         self.embed_calls.append({"model": model, "input": input, "keep_alive": keep_alive})
         if self.embed_raises is not None:

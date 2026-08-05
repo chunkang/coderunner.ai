@@ -112,7 +112,7 @@ class FakeEmbedClient:
     def embed(
         self,
         model: str = "",
-        input: str | Sequence[str] = "",  # noqa: A002 - mirrors the real signature
+        input: str | Sequence[str] = "",  # noqa: A002 — mirrors ollama's embed() signature
         keep_alive: Any = None,
         **kwargs: Any,
     ) -> Any:
@@ -219,5 +219,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
                 reporter.write_line(f"  - {line}", red=True)
         session.exitstatus = 1
     elif reporter is not None:
-        joined = ", ".join(f"{name} >= {floor:.0f}%" for name, floor in PER_FILE_COVERAGE_TARGETS.items())
+        joined = ", ".join(
+            f"{name} >= {floor:.0f}%" for name, floor in PER_FILE_COVERAGE_TARGETS.items()
+        )
         reporter.write_line(f"Per-file coverage gate passed ({joined})", green=True)

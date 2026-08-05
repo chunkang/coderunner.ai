@@ -15,9 +15,8 @@ from __future__ import annotations
 import pytest
 
 import memory
-from vectorstore import VectorStore
-
 from conftest import EMBED_MODEL, make_record
+from vectorstore import VectorStore
 
 
 class Emitter:
