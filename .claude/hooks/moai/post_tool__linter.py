@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """PostToolUse Hook: Automatic Linting
 
 Claude Code Event: PostToolUse
@@ -37,6 +41,12 @@ if str(LIB_DIR) not in sys.path:
 # Try importing tool_registry, with fallback
 try:
     import tool_registry  # noqa: F401
+
+    # ToolType must be bound on the success path too: it is referenced bare at
+    # the `get_tools_for_file(..., ToolType.LINTER)` call site, and previously
+    # existed only in the fallback branch below — so a *successful* import left
+    # it undefined and raised NameError at lint time.
+    from tool_registry import ToolType  # noqa: F401
 
     TOOL_REGISTRY_AVAILABLE = True
 except ImportError:

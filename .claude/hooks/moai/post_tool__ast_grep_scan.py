@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """PostToolUse Hook: Automatic AST-Grep Security Scan
 
 Automatically runs AST-Grep security scanning after Write/Edit operations
