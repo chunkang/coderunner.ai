@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import atexit
+import itertools
 import os
 import re
 import readline
@@ -28,7 +29,9 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -289,12 +292,104 @@ def run_python(code: str, timeout: int = EXEC_TIMEOUT_SEC) -> ExecResult:
 # ------------------------------------------------------------------------------
 
 
-def status(icon: str, tag: str, message: str, style: str = "cyan") -> None:
+# The icon flips every PULSE_HALF_PERIOD_SEC, so a full bright/dim cycle takes
+# twice that. Refresh has to be comfortably faster than the flip or the phase
+# lands unevenly and the pulse looks like a stutter rather than a beat.
+PULSE_HALF_PERIOD_SEC = 0.4
+PULSE_REFRESH_PER_SEC = 12
+
+
+def _status_line(
+    icon: str, tag: str, message: str, style: str, icon_style: str = "bold"
+) -> Text:
     line = Text()
-    line.append(f"{icon} ", style="bold")
+    line.append(f"{icon} ", style=icon_style)
     line.append(f"[{tag}] ", style=f"bold {style}")
     line.append(message, style="white")
-    console.print(line)
+    return line
+
+
+def status(icon: str, tag: str, message: str, style: str = "cyan") -> None:
+    console.print(_status_line(icon, tag, message, style))
+
+
+class _PulsingLine:
+    """A status line whose icon alternates bright and dim while work is running.
+
+    Rich re-invokes ``__rich__`` on every refresh of a Live region, so the phase
+    is derived from the clock rather than from mutation — no timer thread, and
+    no state to reset between uses.
+
+    This is a redraw pulse, deliberately not the ANSI blink attribute
+    (``\\x1b[5m``, which Rich will happily emit as ``style="blink"``). iTerm2,
+    VS Code's terminal and Windows Terminal all ignore that code, so on the
+    machines this project actually runs on it would animate nothing at all.
+    """
+
+    def __init__(self, icon: str, tag: str, message: str, style: str) -> None:
+        self.icon = icon
+        self.tag = tag
+        self.message = message
+        self.style = style
+
+    def __rich__(self) -> Text:
+        lit = int(time.monotonic() / PULSE_HALF_PERIOD_SEC) % 2 == 0
+        return _status_line(
+            self.icon, self.tag, self.message, self.style, "bold" if lit else "dim"
+        )
+
+
+@contextmanager
+def processing(
+    icon: str, tag: str, message: str, style: str = "cyan", *, settle: bool = True
+) -> Iterator[None]:
+    """Pulse ``icon`` on a transient line for as long as the block runs.
+
+    Nothing pulses once the block is done: the Live region is transient, so it
+    is erased on exit and the terminal is left holding only steady text.
+    ``settle=True`` then prints the same line permanently; pass ``settle=False``
+    where the outcome decides the wording and the caller emits its own line.
+
+    The final line is printed from a ``finally``, so a phase that raises still
+    leaves a record of what was being attempted -- matching the old behaviour of
+    printing the line up front.
+    """
+    if not console.is_terminal:
+        # Piped, redirected or captured under pytest: an animation would just be
+        # escape-code noise in the log. Do the work, then report it.
+        try:
+            yield
+        finally:
+            if settle:
+                status(icon, tag, message, style)
+        return
+
+    try:
+        with Live(
+            _PulsingLine(icon, tag, message, style),
+            console=console,
+            refresh_per_second=PULSE_REFRESH_PER_SEC,
+            transient=True,
+        ):
+            yield
+    finally:
+        if settle:
+            status(icon, tag, message, style)
+
+
+def prime_stream(tokens: Iterator[str]) -> Iterator[str]:
+    """Draw the first token, returning a stream that still yields it.
+
+    Ollama emits nothing until it has loaded the model and evaluated the
+    prompt, which is the longest silent stretch in a turn. Pulling one token
+    inside a ``processing`` block puts the animation exactly over that wait and
+    stops it the instant real output begins.
+    """
+    try:
+        first = next(tokens)
+    except StopIteration:
+        return iter(())
+    return itertools.chain((first,), tokens)
 
 
 def show_code(code: str) -> None:
@@ -413,13 +508,22 @@ def _capture_turn(
     if store is None or not MEMORY_ENABLED:
         return False  # deliberately off, or reported once at startup
 
-    vector = vector_for_capture(client, store, task, MEMORY_CFG, recall_result)
+    # settle=False: the embed and the write share one animation, but which line
+    # follows depends on how they went, so the outcome branches below print it.
+    with processing("🧠", "Memory", "Saving this solution…", "green", settle=False):
+        vector = vector_for_capture(client, store, task, MEMORY_CFG, recall_result)
+        # `and` short-circuits, so a failed embed still skips the write exactly
+        # as the sequential form did.
+        written = bool(vector) and remember_success(
+            store, task, thought, code, stdout, vector, MEMORY_CFG
+        )
+
     if not vector:
         # Either retrieval's embed already failed (and was reported), or the
         # cold-start embed just failed here.
         return False if already_warned else _warn_memory(MEMORY_DEGRADED_MSG)
 
-    if remember_success(store, task, thought, code, stdout, vector, MEMORY_CFG):
+    if written:
         status("🧠", "Memory", "Captured this solution for future turns.", "green")
         return False
 
@@ -439,7 +543,16 @@ def agentic_turn(
     # Retrieval runs ONCE per turn, before the loop, so the embedding round trip
     # is not paid per attempt. The resulting vector is cached and reused by the
     # capture below, so a turn costs exactly one embed call, not two (M2).
-    recall_result = recall_for_task(client, store, user_input, MEMORY_CFG)
+    # Only animate when there is actually a store to search: with memory off,
+    # recall_for_task returns immediately and a flashed "Searching…" would claim
+    # work that never happened.
+    searching = (
+        processing("🧠", "Memory", "Searching past solutions…", "green", settle=False)
+        if store is not None and MEMORY_ENABLED
+        else nullcontext()
+    )
+    with searching:
+        recall_result = recall_for_task(client, store, user_input, MEMORY_CFG)
     recall_block: str | None = None
 
     # At most one degradation line per turn, tracked from here through capture.
@@ -458,13 +571,6 @@ def agentic_turn(
         )
 
     for attempt in range(1, MAX_RETRIES + 1):
-        status(
-            "🔄",
-            "LLaMA",
-            f"Analyzing request and designing solution (attempt {attempt}/{MAX_RETRIES})…",
-            "cyan",
-        )
-
         # Attempt 1 only (C8). On a retry the conversation already contains the
         # failed attempt, and re-injecting the same example risks re-anchoring
         # the model on an approach that has just been shown not to work.
@@ -478,10 +584,18 @@ def agentic_turn(
             else conv.messages
         )
 
+        with processing(
+            "🔄",
+            "LLaMA",
+            f"Analyzing request and designing solution (attempt {attempt}/{MAX_RETRIES})…",
+            "cyan",
+        ):
+            thought_tokens = prime_stream(stream_llm(client, request_messages))
+
         thought = render_stream(
             title=f"Thought · attempt {attempt}",
             style="cyan",
-            token_iter=stream_llm(client, request_messages),
+            token_iter=thought_tokens,
         )
         conv.assistant(thought)
 
@@ -491,9 +605,7 @@ def agentic_turn(
             return
 
         show_code(code)
-        status("⚙️", "System", "Running generated Python code…", "yellow")
-
-        with console.status("[bold yellow]Executing sandboxed script…", spinner="dots"):
+        with processing("⚙️", "System", "Running generated Python code…", "yellow"):
             result = run_python(code)
 
         show_exec_result(result)
@@ -507,12 +619,14 @@ def agentic_turn(
             )
             conv.user(feedback)
 
-            status("💬", "LLaMA", "Final response streaming…", "magenta")
-            # No recall block on the grounded pass: it only needs the stdout.
+            with processing("💬", "LLaMA", "Final response streaming…", "magenta"):
+                # No recall block on the grounded pass: it only needs the stdout.
+                answer_tokens = prime_stream(stream_llm(client, conv.messages))
+
             answer = render_stream(
                 title="Answer",
                 style="magenta",
-                token_iter=stream_llm(client, conv.messages),
+                token_iter=answer_tokens,
             )
             conv.assistant(answer)
 

@@ -598,3 +598,90 @@ def test_the_memory_config_is_shared_not_re_read_per_turn() -> None:
     assert main.MEMORY_CFG.embed_model == main.EMBED_MODEL
     assert main.MEMORY_CFG.top_k == main.MEMORY_TOP_K
     assert main.MEMORY_CFG.chat_model == main.MODEL_NAME
+
+
+# ------------------------------------------------------------------------------
+# Processing pulse — the icon animates only while a phase is running
+# ------------------------------------------------------------------------------
+
+
+def icon_style(line: Any) -> str:
+    """The style applied to the icon, which is the first span of a status line."""
+    return str(line.spans[0].style)
+
+
+def test_pulsing_line_alternates_the_icon_between_bright_and_dim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pulse is derived from the clock, so __rich__ alone proves the beat."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    pulse = main._PulsingLine("*", "LLaMA", "thinking", "cyan")
+
+    clock["now"] = 0.0
+    assert icon_style(pulse.__rich__()) == "bold"
+    clock["now"] = main.PULSE_HALF_PERIOD_SEC
+    assert icon_style(pulse.__rich__()) == "dim"
+    clock["now"] = main.PULSE_HALF_PERIOD_SEC * 2
+    assert icon_style(pulse.__rich__()) == "bold"
+
+
+def test_pulsing_line_carries_the_same_text_as_a_settled_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the icon's brightness differs; the wording must not shift mid-pulse."""
+    monkeypatch.setattr(main.time, "monotonic", lambda: 0.0)
+    pulsing = main._PulsingLine("*", "LLaMA", "thinking", "cyan").__rich__()
+    settled = main._status_line("*", "LLaMA", "thinking", "cyan")
+    assert pulsing.plain == settled.plain
+
+
+def test_processing_settles_into_one_permanent_line(status_lines: list[dict]) -> None:
+    with main.processing("*", "System", "working", "yellow"):
+        pass
+    assert status_lines == [
+        {"icon": "*", "tag": "System", "message": "working", "style": "yellow"}
+    ]
+
+
+def test_processing_reports_even_when_the_phase_raises(status_lines: list[dict]) -> None:
+    """A failed phase still leaves a record of what was attempted."""
+    with pytest.raises(RuntimeError), main.processing("*", "System", "working", "yellow"):
+        raise RuntimeError("boom")
+    assert [line["message"] for line in status_lines] == ["working"]
+
+
+def test_processing_with_settle_false_leaves_the_wording_to_the_caller(
+    status_lines: list[dict],
+) -> None:
+    with main.processing("*", "Memory", "searching", "green", settle=False):
+        pass
+    assert status_lines == []
+
+
+def test_prime_stream_yields_every_token_in_order() -> None:
+    assert list(main.prime_stream(iter(["a", "b", "c"]))) == ["a", "b", "c"]
+
+
+def test_prime_stream_tolerates_an_empty_stream() -> None:
+    assert list(main.prime_stream(iter([]))) == []
+
+
+def test_prime_stream_draws_exactly_one_token_eagerly() -> None:
+    """This is what puts the pulse over the model's warm-up rather than after it.
+
+    Ollama yields nothing until the prompt has been evaluated. Pulling one token
+    inside the processing block means the animation covers that wait; pulling
+    none would leave it running over an already-streaming response, and pulling
+    all of them would defeat the streaming panel entirely.
+    """
+    drawn: list[str] = []
+
+    def source() -> Iterator[str]:
+        for token in ("a", "b", "c"):
+            drawn.append(token)
+            yield token
+
+    primed = main.prime_stream(source())
+    assert drawn == ["a"]
+    assert list(primed) == ["a", "b", "c"]
