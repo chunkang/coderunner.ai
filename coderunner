@@ -166,6 +166,27 @@ if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
   ok "Build complete."
 fi
 
+# --- 5a. model presence helpers -----------------------------------------------
+# `ollama list` prints FULLY-QUALIFIED tags and `grep -qx` is a whole-line exact
+# match, so any tag passed here must carry its `:latest` suffix where it has one.
+# A bare `nomic-embed-text` would never match and would re-pull 274 MB on every
+# single launch. See SPEC-MEMORY-001 §3.2.
+have_model() {
+  docker exec coderunner-ollama ollama list 2>/dev/null \
+    | awk 'NR>1 {print $1}' | grep -qx "$1"
+}
+
+# Pulls one tag through the one-shot `model-pull` service. PULL_MODEL is read
+# from this shell's environment by compose at parse time; when unset the service
+# falls back to CODERUNNER_MODEL (docker-compose.yml:37-46).
+pull_model() {
+  local model="$1" label="$2"
+  say "Pulling ${label} model '${model}' (first run — this may take a while)…"
+  PULL_MODEL="$model" "${COMPOSE[@]}" run --rm model-pull \
+    || die "Failed to pull ${label} model '${model}' (see $LOG_FILE)."
+  ok "Model '${model}' ready."
+}
+
 # --- 5b. start bundled Ollama service and pull model on first run -------------
 ensure_ollama_service() {
   # Bring up the ollama sidecar (idempotent; no-op if already running).
@@ -181,13 +202,18 @@ ensure_ollama_service() {
     sleep 2
   done
 
-  # Pull model if not already present in the ollama volume.
+  # Pull the chat model if not already present in the ollama volume.
   local model="${CODERUNNER_MODEL:-llama3.1:8b}"
-  if ! docker exec coderunner-ollama ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$model"; then
-    say "Pulling model '${model}' (first run — this may take several GB)…"
-    "${COMPOSE[@]}" run --rm model-pull \
-      || die "Failed to pull model '${model}' (see $LOG_FILE)."
-    ok "Model '${model}' ready."
+  have_model "$model" || pull_model "$model" "chat"
+
+  # The embedding model is checked INDEPENDENTLY, not gated on the chat model
+  # being absent. Gating it means that on any machine which already has the chat
+  # model the embedding model is never fetched, and `client.embed` then fails on
+  # every turn forever while the memory subsystem silently degrades.
+  # See SPEC-MEMORY-001 §3.2 (trap B).
+  if [[ "${CODERUNNER_MEMORY:-1}" != "0" ]]; then
+    local embed_model="${CODERUNNER_EMBED_MODEL:-nomic-embed-text:latest}"
+    have_model "$embed_model" || pull_model "$embed_model" "embedding"
   fi
 }
 ensure_ollama_service
@@ -219,6 +245,14 @@ if [[ "${1:-}" == "--doctor" ]]; then
   ollama_models="$(docker exec coderunner-ollama ollama list 2>/dev/null | awk 'NR>1 {print $1}' | paste -sd, - || echo 'n/a')"
   printf '  ollama models    : %s\n' "${ollama_models:-none}"
   printf '  ollama volume    : %s\n' "$(docker volume inspect coderunner_ollama_data --format '{{.Mountpoint}}' 2>/dev/null || echo 'missing')"
+  printf '  app volume       : %s\n' "$(docker volume inspect coderunner_app_data --format '{{.Mountpoint}}' 2>/dev/null || echo 'missing')"
+  if [[ "${CODERUNNER_MEMORY:-1}" != "0" ]]; then
+    doctor_embed="${CODERUNNER_EMBED_MODEL:-nomic-embed-text:latest}"
+    printf '  embed model      : %s (%s)\n' "$doctor_embed" \
+      "$(have_model "$doctor_embed" && echo present || echo MISSING)"
+  else
+    printf '  embed model      : %s\n' 'disabled (CODERUNNER_MEMORY=0)'
+  fi
   printf '  bootstrap log    : %s\n' "$LOG_FILE"
   exit 0
 fi

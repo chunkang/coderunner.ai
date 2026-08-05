@@ -4,3 +4,13 @@ httpx>=0.27.0
 requests>=2.32.0
 beautifulsoup4>=4.12.0
 lxml>=5.2.0
+# The `[milvus_lite]` extra is NOT optional (SPEC-MEMORY-001 v1.1.0, V4 1).
+# Bare `pymilvus` installs and imports cleanly, then raises
+# ConnectionConfigException at MilvusClient("<path>") — a one-word omission
+# that produces total, immediate failure of solution memory. numpy arrives
+# transitively; it is accepted, not adopted, and no first-party module imports
+# it (AC-14). Costs ~352 MB of site-packages, and the built image goes from
+# 273 MB to 754 MB — +481 MB, roughly 2.8x. The two figures differ because of
+# pip metadata, layer overhead and on-disk expansion of the wheels; the image
+# number is measured after the build, not derived from the site-packages one.
+pymilvus[milvus_lite]>=3.0.1

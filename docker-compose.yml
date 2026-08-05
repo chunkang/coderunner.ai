@@ -2,13 +2,20 @@
 #  CodeRunner.AI  ::  docker-compose orchestration
 # ------------------------------------------------------------------------------
 #  Author  : kurapa <kurapa@kurapa.com>
-#  Purpose : Two-service stack — the CodeRunner terminal app + a self-hosted
-#            Ollama server. No dependency on host-installed Ollama.
+#  Purpose : Three-service stack — the CodeRunner terminal app, a self-hosted
+#            Ollama server, and a one-shot `model-pull` helper. No dependency
+#            on host-installed Ollama.
 #
-#            `coderunner` runs ephemerally (--rm) so it leaves no residue.
-#            `ollama`     is a long-lived companion service that holds the
-#                         downloaded model in a named volume across sessions
-#                         (so we don't re-download on every launch).
+#            `coderunner`  runs ephemerally (--rm), but since SPEC-MEMORY-001 it
+#                          is NO LONGER residue-free: solution memory persists to
+#                          the `coderunner_app_data` volume (~0.9 GB at the
+#                          100,000-record cap). Set CODERUNNER_MEMORY=0 to
+#                          disable, or `docker volume rm coderunner_app_data`.
+#            `ollama`      is a long-lived companion service that holds the
+#                          downloaded models in a named volume across sessions
+#                          (so we don't re-download on every launch).
+#            `model-pull`  fetches one tag then exits; the launcher invokes it
+#                          separately for the chat and embedding models.
 # ==============================================================================
 
 services:
@@ -37,8 +44,15 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
       CODERUNNER_MODEL: ${CODERUNNER_MODEL:-llama3.1:8b}
+      # Optional override so the launcher can pull an arbitrary tag (e.g. the
+      # embedding model) through this same service. `${PULL_MODEL:-}` is
+      # interpolated by compose from the HOST environment at parse time.
+      PULL_MODEL: ${PULL_MODEL:-}
     entrypoint: ["/bin/sh", "-c"]
-    command: ['ollama pull "$$CODERUNNER_MODEL"']
+    # `$$` escapes compose interpolation so the CONTAINER shell expands these.
+    # With PULL_MODEL unset/empty this falls back to CODERUNNER_MODEL, keeping
+    # the bare `docker compose run --rm model-pull` path working unchanged.
+    command: ['ollama pull "$${PULL_MODEL:-$$CODERUNNER_MODEL}"']
     restart: "no"
 
   coderunner:
@@ -53,14 +67,49 @@ services:
     stdin_open: true
     tty: true
     init: true
+    # Persistent store for solution memory. Survives the `--rm` lifecycle at
+    # coderunner:263. The mount path is created and chowned to `runner` in the
+    # Dockerfile — without that this volume is created root-owned and is
+    # unwritable. See SPEC-MEMORY-001 §3.1.
+    volumes:
+      - app_data:/home/runner/.coderunner
     environment:
       OLLAMA_HOST: http://ollama:11434
       CODERUNNER_MODEL: ${CODERUNNER_MODEL:-llama3.1:8b}
       CODERUNNER_TIMEOUT: ${CODERUNNER_TIMEOUT:-30}
       CODERUNNER_MAX_RETRIES: ${CODERUNNER_MAX_RETRIES:-3}
+      # --- solution memory (SPEC-MEMORY-001) ---
+      CODERUNNER_MEMORY: ${CODERUNNER_MEMORY:-1}
+      # The `:latest` suffix is REQUIRED. coderunner:176 matches with `grep -qx`
+      # against `ollama list`, which prints fully-qualified tags; a bare
+      # `nomic-embed-text` would never match and would re-pull 274 MB on every
+      # launch. See SPEC-MEMORY-001 §3.2.
+      CODERUNNER_EMBED_MODEL: ${CODERUNNER_EMBED_MODEL:-nomic-embed-text:latest}
+      # MUST end in `.db` — Milvus Lite rejects any local URI that does not
+      # ("uri: ... is illegal, needs ... a local file endswith [.db]"), yet what
+      # it creates at that path is a DIRECTORY, not a file. Pointing it at the
+      # v1.0.x SQLite `memory.db` therefore makes os.makedirs raise
+      # FileExistsError -> ConnectionConfigException on EVERY launch, forever,
+      # and the fault is indistinguishable from well-behaved degradation.
+      # The distinct filename also honours out-of-scope item 14: any
+      # pre-existing SQLite memory.db is left untouched. SPEC-MEMORY-001 v1.1.0.
+      CODERUNNER_MEMORY_DB: ${CODERUNNER_MEMORY_DB:-/home/runner/.coderunner/memory.milvus.db}
+      CODERUNNER_MEMORY_TOP_K: ${CODERUNNER_MEMORY_TOP_K:-1}
+      CODERUNNER_MEMORY_MIN_SIMILARITY: ${CODERUNNER_MEMORY_MIN_SIMILARITY:-0.65}
+      # v1.1.0 raised this from 500 (D2). At the cap the volume reaches roughly
+      # 0.9 GB — 618 MB of FLAT vectors plus ~8 KB/record of text. Search stays
+      # ~298 ms on a cold container (V5c). Keep in step with DEFAULT_MAX_RECORDS
+      # in memory.py; the clamp ceiling is 200,000.
+      CODERUNNER_MEMORY_MAX_RECORDS: ${CODERUNNER_MEMORY_MAX_RECORDS:-100000}
+      # Incidental fix to the pre-existing gap in product.md 6.2 — revert this
+      # single line to restore prior behaviour. Not part of SPEC-MEMORY-001's
+      # requirements: no requirement, no acceptance criterion, no test.
+      CODERUNNER_HISTORY: /home/runner/.coderunner/history
       TERM: xterm-256color
     restart: "no"
 
 volumes:
   ollama_data:
     name: coderunner_ollama_data
+  app_data:
+    name: coderunner_app_data
