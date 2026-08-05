@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import io
 import sys
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator, Sequence
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -60,7 +61,7 @@ def make_record(
     embedding: Sequence[float] | None = None,
     embed_model: str = EMBED_MODEL,
     created_at: str = "2026-08-02T00:00:00+00:00",
-) -> "Any":
+) -> Any:
     from memory import SolutionRecord
 
     vector = [1.0, 0.0, 0.0] if embedding is None else [float(v) for v in embedding]
@@ -144,7 +145,7 @@ def db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def tmp_store(db_path: Path) -> Iterator["VectorStore"]:
+def tmp_store(db_path: Path) -> Iterator[VectorStore]:
     # T-VS10: repointing this single fixture repoints every store-dependent
     # test. The importorskip is a safety net for a platform with no milvus_lite
     # wheel; it is NOT a licence to skip the vectorstore.py coverage gate, which

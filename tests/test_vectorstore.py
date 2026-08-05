@@ -661,7 +661,7 @@ def test_pruning_converges_across_sequence_gaps(tmp_store: VectorStore) -> None:
     """
     for index in range(20):
         tmp_store.insert(make_record(task=f"task {index}"), max_records=500)
-    for seq in range(0, 16):  # a 16-wide hole at the bottom of the seq range
+    for seq in range(16):  # a 16-wide hole at the bottom of the seq range
         tmp_store.delete(seq)
     assert tmp_store.count() == 4
     assert tmp_store.meta_get("min_seq") == "0"

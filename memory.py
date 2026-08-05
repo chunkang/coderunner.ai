@@ -25,10 +25,11 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any
 
 # ------------------------------------------------------------------------------
 # Constants
@@ -274,7 +275,7 @@ class MemoryConfig:
     max_records: int
 
     @classmethod
-    def from_env(cls, chat_model: str) -> "MemoryConfig":
+    def from_env(cls, chat_model: str) -> MemoryConfig:
         raw_path = os.environ.get("CODERUNNER_MEMORY_DB", "").strip()
         return cls(
             enabled=env_bool("CODERUNNER_MEMORY", True),  # constraint C4: ON
@@ -448,7 +449,7 @@ def handle_memory_command(
     store: Any,
     text: str,
     emit: Callable[[str], None],
-    cfg: "MemoryConfig | None" = None,
+    cfg: MemoryConfig | None = None,
 ) -> bool:
     """Handle a ``/memory`` REPL command. ``True`` if it was ours to handle.
 
@@ -495,7 +496,7 @@ def handle_memory_command(
 
 
 def _emit_status(
-    store: Any, emit: Callable[[str], None], cfg: "MemoryConfig | None"
+    store: Any, emit: Callable[[str], None], cfg: MemoryConfig | None
 ) -> None:
     embed_model = cfg.embed_model if cfg is not None else None
     stats = store.stats(embed_model, None)

@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from pymilvus import DataType, MilvusClient
 
@@ -168,7 +169,7 @@ class VectorStore:
     # -- lifecycle ------------------------------------------------------------
 
     @classmethod
-    def open(cls, path: Path | str, dim: int | None = None) -> "VectorStore | None":
+    def open(cls, path: Path | str, dim: int | None = None) -> VectorStore | None:
         """Open (creating if needed) the store at ``path``; ``None`` on any failure.
 
         Covers AC-3d (unwritable path), AC-3e (the path is a file rather than a

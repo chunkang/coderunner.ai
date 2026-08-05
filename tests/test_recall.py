@@ -175,7 +175,7 @@ def test_embed_text_returns_none_on_an_unexpected_exception(
 
 
 def test_empty_store_returns_none_without_embedding_at_all(
-    tmp_store: "VectorStore", fake_embedder: FakeEmbedClient, cfg: MemoryConfig
+    tmp_store: VectorStore, fake_embedder: FakeEmbedClient, cfg: MemoryConfig
 ) -> None:
     """AC-1: a cold start costs ZERO additional latency.
 
@@ -195,7 +195,7 @@ def test_absent_store_returns_none_without_embedding(
 
 
 def test_blank_task_returns_none_without_embedding(
-    tmp_store: "VectorStore", fake_embedder: FakeEmbedClient, cfg: MemoryConfig
+    tmp_store: VectorStore, fake_embedder: FakeEmbedClient, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(make_record(), max_records=500)
     assert recall.recall_for_task(fake_embedder, tmp_store, "  ", cfg) is None
@@ -208,7 +208,7 @@ def test_blank_task_returns_none_without_embedding(
 
 
 def test_recall_returns_the_best_hit_above_threshold(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     stored = memory.l2_normalise([1.0, 0.0])
     tmp_store.insert(
@@ -228,7 +228,7 @@ def test_recall_returns_the_best_hit_above_threshold(
 
 
 def test_recall_below_threshold_is_a_miss_but_keeps_the_vector(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """AC-6 / M3: below threshold injects nothing, but still surfaces the vector.
 
@@ -258,7 +258,7 @@ def test_recall_below_threshold_is_a_miss_but_keeps_the_vector(
 
 
 def test_a_miss_reports_the_actual_best_similarity_not_zero(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     # The best candidate's real score, so a human can see how close it came.
     # Three dimensions, so the query can be near one record and orthogonal to
@@ -281,7 +281,7 @@ def test_a_miss_reports_the_actual_best_similarity_not_zero(
 
 
 def test_hit_and_miss_are_distinguished_by_record_not_by_truthiness(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """Callers must branch on `recall.record is not None`, never on the Recall.
 
@@ -308,7 +308,7 @@ def test_hit_and_miss_are_distinguished_by_record_not_by_truthiness(
 
 
 def test_recall_returns_none_only_for_the_four_unavailable_conditions(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """None means "no retrieval happened", never "retrieval found nothing"."""
     # 1. store unavailable
@@ -326,7 +326,7 @@ def test_recall_returns_none_only_for_the_four_unavailable_conditions(
 
 
 def test_recall_returns_none_when_embedding_fails(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(make_record(), max_records=500)
     client = FakeEmbedClient(raises=ollama.ResponseError("not found"))
@@ -334,7 +334,7 @@ def test_recall_returns_none_when_embedding_fails(
 
 
 def test_recall_ignores_records_from_a_different_embedding_model(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(
         make_record(
@@ -354,7 +354,7 @@ def test_recall_ignores_records_from_a_different_embedding_model(
 
 
 def test_recall_derives_the_dimension_from_the_returned_vector(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     # AC-1: `dim` is never hardcoded. A 5-dim store must be matched by a 5-dim
     # query and ignored by a 2-dim one.
@@ -376,7 +376,7 @@ def test_recall_derives_the_dimension_from_the_returned_vector(
 
 
 def test_remember_success_persists_the_record(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     vector = memory.l2_normalise([1.0, 2.0, 2.0])
     assert (
@@ -398,7 +398,7 @@ def test_remember_success_persists_the_record(
 
 
 def test_remember_success_derives_dim_from_the_vector(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     recall.remember_success(
         tmp_store, "a task", "t", "c", "o", memory.l2_normalise([1.0] * 768), cfg
@@ -409,7 +409,7 @@ def test_remember_success_derives_dim_from_the_vector(
 
 
 def test_remember_success_honours_the_record_cap(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     cfg.max_records = 3
     for index in range(6):
@@ -421,7 +421,7 @@ def test_remember_success_honours_the_record_cap(
 
 @pytest.mark.parametrize("vector", [None, []], ids=["none", "empty"])
 def test_remember_success_without_a_vector_is_a_no_op(
-    tmp_store: "VectorStore", cfg: MemoryConfig, vector: list[float] | None
+    tmp_store: VectorStore, cfg: MemoryConfig, vector: list[float] | None
 ) -> None:
     assert recall.remember_success(tmp_store, "t", "t", "c", "o", vector, cfg) is False
     assert tmp_store.count() == 0
@@ -432,7 +432,7 @@ def test_remember_success_without_a_store_is_a_no_op(cfg: MemoryConfig) -> None:
 
 
 def test_remember_success_degrades_when_the_store_write_fails(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.close()
     assert recall.remember_success(tmp_store, "t", "t", "c", "o", [1.0, 0.0], cfg) is False
@@ -452,7 +452,7 @@ def test_remember_success_cannot_embed_because_it_has_no_client() -> None:
 
 
 def test_a_full_retrieve_then_capture_turn_embeds_exactly_once(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """M2: the retrieval vector is reused for capture — one embed, not two."""
     tmp_store.insert(
@@ -479,7 +479,7 @@ def test_a_full_retrieve_then_capture_turn_embeds_exactly_once(
 
 
 def test_a_missed_turn_still_captures_and_still_embeds_only_once(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """AC-6b at unit level: a miss must still learn.
 
@@ -516,7 +516,7 @@ def test_a_missed_turn_still_captures_and_still_embeds_only_once(
 
 
 def test_degraded_is_true_only_when_an_embed_was_attempted_and_failed(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(make_record(embedding=[1.0, 0.0]), max_records=500)
     client = FakeEmbedClient(raises=ollama.ResponseError("not pulled"))
@@ -527,7 +527,7 @@ def test_degraded_is_true_only_when_an_embed_was_attempted_and_failed(
 
 
 def test_a_completed_retrieval_is_never_degraded(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(
         make_record(embedding=memory.l2_normalise([1.0, 0.0])), max_records=500
@@ -540,7 +540,7 @@ def test_a_completed_retrieval_is_never_degraded(
 
 
 def test_the_cold_start_short_circuit_is_not_degradation(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     # Skipping the embed on an empty store is the M3 optimisation. Reporting it
     # would put a warning on the first turn of every fresh install.
@@ -551,7 +551,7 @@ def test_the_cold_start_short_circuit_is_not_degradation(
 
 
 def test_deliberately_disabled_memory_is_not_degradation(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(make_record(embedding=[1.0, 0.0]), max_records=500)
     cfg.enabled = False
@@ -565,7 +565,7 @@ def test_an_absent_store_is_not_degradation(cfg: MemoryConfig) -> None:
 
 @pytest.mark.parametrize("task", ["", "   ", "\n\t "])
 def test_a_blank_task_is_not_degradation(
-    tmp_store: "VectorStore", cfg: MemoryConfig, task: str
+    tmp_store: VectorStore, cfg: MemoryConfig, task: str
 ) -> None:
     # No embed is attempted for a blank task, so there is nothing to report.
     tmp_store.insert(make_record(embedding=[1.0, 0.0]), max_records=500)
@@ -578,7 +578,7 @@ def test_a_blank_task_is_not_degradation(
 
 
 def test_capture_vector_is_reused_from_a_hit(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(
         make_record(task="prior", embedding=memory.l2_normalise([1.0, 0.0])),
@@ -593,7 +593,7 @@ def test_capture_vector_is_reused_from_a_hit(
 
 
 def test_capture_vector_is_reused_from_a_miss(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     tmp_store.insert(
         make_record(task="prior", embedding=memory.l2_normalise([1.0, 0.0])),
@@ -609,7 +609,7 @@ def test_capture_vector_is_reused_from_a_miss(
 
 
 def test_capture_vector_is_embedded_once_on_a_cold_start(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """The first record would otherwise never be written.
 
@@ -630,7 +630,7 @@ def test_capture_vector_is_embedded_once_on_a_cold_start(
 
 
 def test_capture_vector_does_not_retry_a_failed_embedding(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     """A degraded backend must cost one failed call per turn, not two.
 
@@ -649,7 +649,7 @@ def test_capture_vector_does_not_retry_a_failed_embedding(
 
 
 def test_capture_vector_is_none_when_memory_is_off_or_absent(
-    tmp_store: "VectorStore", cfg: MemoryConfig
+    tmp_store: VectorStore, cfg: MemoryConfig
 ) -> None:
     client = FakeEmbedClient()
     assert recall.vector_for_capture(client, None, "t", cfg, None) is None

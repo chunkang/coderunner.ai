@@ -30,7 +30,7 @@ import tempfile
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from collections.abc import Iterator
 
 import httpx
 import ollama

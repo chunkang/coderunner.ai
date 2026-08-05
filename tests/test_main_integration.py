@@ -16,8 +16,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any
 
 import pytest
 
@@ -74,7 +75,7 @@ DIRECT_REPLY = "Answer: a list is mutable, a tuple is not."
 
 
 @pytest.fixture()
-def conv() -> "main.Conversation":
+def conv() -> main.Conversation:
     conversation = main.Conversation()
     conversation.system(main.SYSTEM_PROMPT)
     return conversation
@@ -140,7 +141,7 @@ def test_stream_llm_skips_empty_chunks() -> None:
 
 
 def test_cold_start_injects_nothing_and_sends_the_pre_feature_message_list(
-    tmp_store: VectorStore, conv: "main.Conversation"
+    tmp_store: VectorStore, conv: main.Conversation
 ) -> None:
     """AC-1: the attempt-1 request is byte-for-byte the pre-feature list."""
     client = FakeClient([CODE_REPLY, ANSWER_REPLY])
@@ -158,7 +159,7 @@ def test_cold_start_injects_nothing_and_sends_the_pre_feature_message_list(
 
 
 def test_cold_start_captures_the_first_record_with_exactly_one_embed(
-    tmp_store: VectorStore, conv: "main.Conversation"
+    tmp_store: VectorStore, conv: main.Conversation
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY])
     main.agentic_turn(client, conv, "compute the answer", tmp_store)
@@ -174,7 +175,7 @@ def test_cold_start_captures_the_first_record_with_exactly_one_embed(
 
 
 def test_cold_start_pays_no_embed_for_retrieval(
-    tmp_store: VectorStore, conv: "main.Conversation"
+    tmp_store: VectorStore, conv: main.Conversation
 ) -> None:
     # The single embed above must be the CAPTURE one. Retrieval on an empty
     # store must not call the backend at all (M3).
@@ -204,7 +205,7 @@ def store_with_prior(tmp_store: VectorStore) -> VectorStore:
 
 
 def test_a_hit_injects_exactly_one_system_message_before_the_user_message(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY], embedding=[1.0, 0.0])
     main.agentic_turn(client, conv, "Tell me the temperature in Busan right now", store_with_prior)
@@ -222,7 +223,7 @@ def test_a_hit_injects_exactly_one_system_message_before_the_user_message(
 
 
 def test_injection_does_not_mutate_the_conversation(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     """AC-2: conv.messages must be what the pre-feature product would hold.
 
@@ -245,7 +246,7 @@ def test_injection_does_not_mutate_the_conversation(
 
 
 def test_the_grounded_answer_pass_receives_no_recall_block(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY], embedding=[1.0, 0.0])
     main.agentic_turn(client, conv, "Tell me the temperature in Busan", store_with_prior)
@@ -256,7 +257,7 @@ def test_the_grounded_answer_pass_receives_no_recall_block(
 
 
 def test_retry_attempts_receive_no_recall_block(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     """Constraint C8: attempt 1 only."""
     failing = "Thought: oops.\n\n```python\nraise SystemExit(3)\n```"
@@ -270,7 +271,7 @@ def test_retry_attempts_receive_no_recall_block(
 
 
 def test_the_executed_code_comes_from_this_turn_not_from_the_store(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     """Constraint C2: stored code is context, never replayed."""
     client = FakeClient([CODE_REPLY, ANSWER_REPLY], embedding=[1.0, 0.0])
@@ -288,7 +289,7 @@ def test_the_executed_code_comes_from_this_turn_not_from_the_store(
 
 
 def test_a_missed_retrieval_still_captures_and_embeds_once(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY], embedding=[0.0, 1.0])  # orthogonal
     main.agentic_turn(client, conv, "a completely unrelated new task", store_with_prior)
@@ -306,7 +307,7 @@ def test_a_missed_retrieval_still_captures_and_embeds_once(
 
 
 def test_a_direct_protocol_turn_is_not_captured(
-    tmp_store: VectorStore, conv: "main.Conversation"
+    tmp_store: VectorStore, conv: main.Conversation
 ) -> None:
     """AC-6: the no-code-block early return stores nothing."""
     client = FakeClient([DIRECT_REPLY])
@@ -315,7 +316,7 @@ def test_a_direct_protocol_turn_is_not_captured(
 
 
 def test_a_failed_execution_is_not_captured(
-    tmp_store: VectorStore, conv: "main.Conversation"
+    tmp_store: VectorStore, conv: main.Conversation
 ) -> None:
     failing = "Thought: oops.\n\n```python\nraise SystemExit(3)\n```"
     client = FakeClient([failing, failing])
@@ -324,7 +325,7 @@ def test_a_failed_execution_is_not_captured(
 
 
 def test_retry_exhaustion_is_not_captured(
-    tmp_store: VectorStore, conv: "main.Conversation"
+    tmp_store: VectorStore, conv: main.Conversation
 ) -> None:
     failing = "Thought: oops.\n\n```python\nraise SystemExit(3)\n```"
     client = FakeClient([failing, failing])
@@ -339,7 +340,7 @@ def test_retry_exhaustion_is_not_captured(
 
 
 def test_a_turn_completes_normally_with_no_store_at_all(
-    conv: "main.Conversation",
+    conv: main.Conversation,
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY])
     main.agentic_turn(client, conv, "compute the answer", None)
@@ -350,7 +351,7 @@ def test_a_turn_completes_normally_with_no_store_at_all(
 
 
 def test_a_turn_completes_when_the_embedding_backend_is_down(
-    store_with_prior: VectorStore, conv: "main.Conversation"
+    store_with_prior: VectorStore, conv: main.Conversation
 ) -> None:
     """AC-3a inside a full turn: no exception, no capture, turn still works."""
     import ollama
@@ -368,7 +369,7 @@ def test_a_turn_completes_when_the_embedding_backend_is_down(
 
 
 def test_memory_disabled_means_no_store_and_no_embedding(
-    conv: "main.Conversation", monkeypatch: pytest.MonkeyPatch
+    conv: main.Conversation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(main, "MEMORY_ENABLED", False)
     assert main._open_memory_store() is None
@@ -400,7 +401,7 @@ def test_open_memory_store_degrades_on_an_unwritable_path(
 
 
 def test_a_failed_retrieval_emits_exactly_one_warning(
-    store_with_prior: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    store_with_prior: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     import ollama
 
@@ -418,7 +419,7 @@ def test_a_failed_retrieval_emits_exactly_one_warning(
 
 
 def test_a_failed_cold_start_capture_emits_exactly_one_warning(
-    tmp_store: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    tmp_store: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     """Retrieval never embedded (empty store); the CAPTURE embed is what failed."""
     import ollama
@@ -433,7 +434,7 @@ def test_a_failed_cold_start_capture_emits_exactly_one_warning(
 
 
 def test_retrieval_and_capture_both_failing_still_warns_only_once(
-    store_with_prior: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    store_with_prior: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     """The assertion that stops a well-meaning fix from double-reporting.
 
@@ -454,7 +455,7 @@ def test_retrieval_and_capture_both_failing_still_warns_only_once(
 
 
 def test_an_unwritable_store_warns_once_on_capture(
-    store_with_prior: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    store_with_prior: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     """remember_success() returning False was silent too."""
     client = FakeClient([CODE_REPLY, ANSWER_REPLY], embedding=[0.0, 1.0])
@@ -468,7 +469,7 @@ def test_an_unwritable_store_warns_once_on_capture(
 
 
 def test_the_healthy_hit_path_warns_about_nothing(
-    store_with_prior: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    store_with_prior: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY], embedding=[1.0, 0.0])
     main.agentic_turn(client, conv, "Tell me the temperature in Busan", store_with_prior)
@@ -480,7 +481,7 @@ def test_the_healthy_hit_path_warns_about_nothing(
 
 
 def test_the_healthy_cold_start_path_warns_about_nothing(
-    tmp_store: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    tmp_store: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     client = FakeClient([CODE_REPLY, ANSWER_REPLY])
     main.agentic_turn(client, conv, "the first task", tmp_store)
@@ -493,7 +494,7 @@ def test_the_healthy_cold_start_path_warns_about_nothing(
 
 
 def test_the_empty_store_short_circuit_is_not_a_failure(
-    tmp_store: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    tmp_store: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     """A cold start skipping the embed is a deliberate optimisation (M3), not a fault.
 
@@ -509,7 +510,7 @@ def test_the_empty_store_short_circuit_is_not_a_failure(
 
 def test_memory_disabled_emits_nothing_at_all(
     tmp_store: VectorStore,
-    conv: "main.Conversation",
+    conv: main.Conversation,
     status_lines: list[dict],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -534,7 +535,7 @@ def test_memory_disabled_emits_nothing_at_all(
 
 
 def test_no_store_at_all_emits_nothing_per_turn(
-    conv: "main.Conversation", status_lines: list[dict]
+    conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     # The unavailable store is reported ONCE at startup by _open_memory_store,
     # not on every turn thereafter.
@@ -564,7 +565,7 @@ def test_startup_says_nothing_when_memory_is_disabled(
 
 
 def test_a_degraded_turn_never_raises_and_still_answers(
-    store_with_prior: VectorStore, conv: "main.Conversation", status_lines: list[dict]
+    store_with_prior: VectorStore, conv: main.Conversation, status_lines: list[dict]
 ) -> None:
     """The M5 backstop: nothing from this subsystem may escape."""
     import httpx
