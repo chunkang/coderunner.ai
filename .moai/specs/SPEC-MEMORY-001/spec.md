@@ -1,14 +1,23 @@
 ---
 id: SPEC-MEMORY-001
 version: "1.1.0"
-status: "draft"
+status: "completed"
 created: "2026-08-02"
-updated: "2026-08-03"
+updated: "2026-08-04"
 author: "Chun Kang"
 priority: "HIGH"
 ---
 
 ## HISTORY
+
+### v1.1.0 verified (2026-08-04) — Implementation complete; status `draft` → `completed`
+
+Verified on Python 3.11.14: **274 tests passing**, with **100% coverage on `memory.py`,
+`recall.py` and `vectorstore.py`** — the per-file gate in `conftest.py` passed. mypy is clean
+apart from a benign missing-stubs note for `pymilvus`; ruff reports 34 style findings in project
+source, dominated by the deliberate blind `except` of the documented degradation path.
+**Status moves `draft` → `completed`.** The version is unchanged: nothing in the specification
+was revised, only its status against a now-verified implementation.
 
 ### v1.1.0 (2026-08-03) — Vector store changed from SQLite to Milvus Lite
 
