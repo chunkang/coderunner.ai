@@ -1,6 +1,6 @@
 ---
 id: SPEC-CI-001
-version: "1.0.0"
+version: "1.0.1"
 status: "draft"
 created: "2026-08-05"
 updated: "2026-08-05"
@@ -9,6 +9,33 @@ priority: "HIGH"
 ---
 
 ## HISTORY
+
+### v1.0.1 (2026-08-05) — F2 promoted from measurement to incident; hashes marked historical
+
+No requirement, acceptance criterion or task changed. What changed is the strength of the
+evidence behind the `image` job, and the tense of a claim that had quietly become false.
+
+**The incident.** Between v1.0.0 being written and this amendment, F2 was found to have
+already cost a shipped feature. `f946142` (*"feat(tui): pulse the status icon while a phase is
+processing"*, authored 2026-08-05T08:01:53-07:00) had been invisible for a day: the image
+predated it by over 24 hours, and `coderunner:163` never rebuilds an image that exists. The
+author ran `./coderunner` repeatedly and reported the feature missing. It was not missing —
+it was not *there*, because the container held 2026-08-04's source. Recorded in full under F2
+and in `acceptance.md` AC-2.
+
+This is a better argument than the hash table it supplements, for a reason worth stating: the
+divergence was detected **by a person noticing an animation was absent**. Nothing in the
+repository detected it, and nothing would have, for any change without a visible symptom.
+
+**The correction.** The image was rebuilt 2026-08-06T06:02:19Z; all five files now match the
+tree. The F2 hash table therefore describes a machine state that no longer exists, and both it
+and AC-2's copy are now explicitly labelled **historical**. They are retained rather than
+refreshed: a table of matching hashes would demonstrate nothing. `plan.md` §1.2's description
+of F2 as "currently-live" is corrected in the same pass.
+
+**What is unchanged.** The `image` job's design, E4, N6, AC-2's Given/When/Then, and the T1-T10
+decomposition all stand exactly as written in v1.0.0 — the incident vindicated the design
+rather than revising it. T3, T5 and T8 remain deferred and unverified.
 
 ### v1.0.0 (2026-08-05) — Initial specification
 
@@ -45,9 +72,40 @@ Three findings shaped the design, and two of them changed it:
   | `tools.py` | `9c12bf4a3195` | `a6ec6f5e8211` |
 
   `coderunner:163` builds **only when `docker image inspect` fails**, i.e. only when the image
-  is absent, so this divergence will never self-correct. This is `product.md` §6.3 not as a
-  documented risk but as the present state of the machine. It is why the `image` job compares
-  hashes rather than merely building.
+  is absent, so a divergence once opened never self-corrects. At the time of measurement this
+  was `product.md` §6.3 not as a documented risk but as the live state of the machine — see
+  the incident below, and the status note at the end of this finding. It is why the `image`
+  job compares hashes rather than merely building.
+
+  **What it cost, before this SPEC was written.** The divergence above is not an abstraction
+  about hashes; it had already swallowed a shipped feature. Commit `f946142`
+  (*"feat(tui): pulse the status icon while a phase is processing"*) was authored
+  **2026-08-05T08:01:53-07:00**, over a day *after* the image was built. The author then ran
+  `./coderunner` and reported never having seen the pulse. Diagnosis, measured: the image's
+  `/app/main.py` contained **zero** occurrences of `_PulsingLine`, `PULSE_HALF_PERIOD_SEC` or
+  `def processing`, against **six** in the working tree. The feature itself was never at fault —
+  driven directly with a forced terminal it renders 9 bright and 8 dim frames over 1.3 s and
+  emits no `\x1b[5m` — it had simply never been inside the container being run.
+
+  Three details make this the strongest argument in the document for the `image` job:
+
+  1. **It was not detected by anything.** It surfaced because a human noticed a visual effect
+     was missing. Had `f946142` changed something without a visible symptom — a boundary
+     condition in `run_python()`, a truncation limit — nothing would have surfaced it at all.
+  2. **The cost of the fix was 12.4 seconds.** `docker compose build coderunner` reused every
+     cached layer, because `Dockerfile:31-32` copies `requirements.txt` before the source, so
+     only the final `COPY` was invalidated. The hazard did not persist because rebuilding is
+     expensive. It persisted because **nothing says when a rebuild is due**, which is precisely
+     the thing a pipeline can say and a launcher, as written, cannot.
+  3. **It was total, not partial.** Five of five. So there was no reading under which the
+     artefact was partly trustworthy, and the import smoke check alone would have passed
+     cleanly against it — the stale image imports perfectly well. Only the hash comparison
+     separates the two cases.
+
+  **Status of the table above: historical.** The image was rebuilt on **2026-08-06T06:02:19Z**
+  and all five files now match the tree. The measurement stands as the record of the incident,
+  not as a description of the machine today. It is retained rather than refreshed because a
+  currently-matching pair of hashes would argue nothing.
 
 - **F3 — the engine floor is lower than the pin suggests.** *(Reported from PyPI metadata;
   **NOT** independently verified in this repository. Treat as a lead, not as a measurement.)*

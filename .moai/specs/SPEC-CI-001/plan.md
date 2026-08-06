@@ -63,7 +63,7 @@ gate it intends to break actually exists.
 | Priority | Tasks | Rationale |
 |---|---|---|
 | **High** | T1, T2, T3, T8 | The suite and the coverage gate are the assets `tech.md` §8.3 says are one commit from decorative |
-| **Medium** | T4, T5, T6, T7 | The image job addresses a **measured, currently-live** defect (F2); the canary addresses an **unverified** lead (F3) |
+| **Medium** | T4, T5, T6, T7 | The image job addresses a defect that was **measured and then observed to cost a shipped feature** — `f946142`'s status-icon pulse was absent from the running container for a day (F2). Remediated locally on 2026-08-06 by a 12.4 s rebuild, which is the point: the fix was never the hard part, noticing was. The canary addresses an **unverified** lead (F3) |
 | **Low** | T9, T10 | Necessary for the work to hold, but nothing in the pipeline depends on them |
 
 Final goal is T10. Optional goal: none — every task listed is required for the SPEC to be

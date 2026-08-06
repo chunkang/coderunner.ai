@@ -83,7 +83,11 @@ differed and both digests.
 **And** no pytest is invoked inside the container, and the workspace is **not** bind-mounted
 (N6).
 
-### Motivating evidence — this is the currently-live state of the machine
+### Motivating evidence — an incident, not a hypothesis
+
+**Historical as of 2026-08-06T06:02:19Z**, when the image was rebuilt and all five files were
+confirmed to match. The measurement below is the record of what happened; it is deliberately
+not refreshed, because a matching pair of hashes demonstrates nothing.
 
 Measured 2026-08-05 against the local `coderunner-ai:latest`, created **2026-08-04T07:00:03Z**.
 SHA-256, first 12 hex digits:
@@ -98,11 +102,41 @@ SHA-256, first 12 hex digits:
 
 **Five out of five.** Not one drifted file — the entire copied source set. `coderunner:163`
 builds only when `docker image inspect` **fails**, i.e. only when the image is **absent**, so
-this will never self-correct; the launcher will keep running 2026-08-04's code indefinitely.
-That is `product.md` §6.3 as present tense rather than as a documented hazard.
+this will never self-correct; the launcher kept running 2026-08-04's code for a day and would
+have continued indefinitely. That is `product.md` §6.3 as present tense rather than as a
+documented hazard.
 
 A build-only job would have passed against this image. The hash comparison is what makes the
 criterion able to fail.
+
+### What the divergence actually cost
+
+This criterion exists because the hazard had already consumed a shipped feature before the
+SPEC was written.
+
+Commit `f946142` — *"feat(tui): pulse the status icon while a phase is processing"* — was
+authored **2026-08-05T08:01:53-07:00**, more than a day after the image was built. The author
+ran `./coderunner` and reported never having seen the pulse.
+
+| Probe | Image `/app/main.py` | Working tree `main.py` |
+|---|---|---|
+| `_PulsingLine`, `PULSE_HALF_PERIOD_SEC`, `def processing` | **0** | **6** |
+
+The feature was never defective. Driven directly against a forced terminal it produces 9
+bright and 8 dim frames over 1.3 s, emits zero `\x1b[5m`, and settles correctly on exit —
+matching `f946142`'s own verification note. It had never been inside the container being run.
+
+Three properties of this incident are what the criterion is shaped around:
+
+| Property | Consequence for the design |
+|---|---|
+| **Detected by a human noticing a missing animation** | The weakest possible detector. A change with no visible symptom — a boundary condition in `run_python()`, a truncation limit in `memory.py` — would have surfaced nothing at all. The pipeline must not depend on a symptom being visible. |
+| **The fix took 12.4 seconds** | Every layer but the final `COPY` was cached, per `Dockerfile:31-32`. The hazard does not persist because rebuilding is costly; it persists because **nothing announces that a rebuild is due**. That is a statement a pipeline can make and `coderunner:163`, as written, structurally cannot. |
+| **Five of five, not one of five** | There is no reading under which the artefact was partly trustworthy. Every manual acceptance run against `./coderunner` between 2026-08-04 07:00 and the rebuild exercised code that no longer existed in the repository. |
+
+The middle row is the one that generalises: **the import smoke check would have passed against
+that image.** A stale image imports perfectly well — it is a valid, coherent, working build of
+older source. Only the hash comparison distinguishes "this builds" from "this is the tree."
 
 ---
 
@@ -251,7 +285,7 @@ a registry credential, or a token beyond the default read-scoped `GITHUB_TOKEN` 
 | Criterion | Status | Discharged by |
 |---|---|---|
 | AC-1 | **not verified on a runner** — the underlying suite result is measured on a host, aarch64 | T3 |
-| AC-2 | **not verified on a runner**; the motivating divergence **is** measured locally | T5, T8(d) |
+| AC-2 | **not verified on a runner**; the motivating divergence was measured locally and has since been **remediated** (rebuild 2026-08-06T06:02:19Z, five of five now match). The incident it caused — a shipped feature invisible for a day — is recorded above | T5, T8(d) |
 | AC-3 | **not verified** | T8(c) |
 | AC-4 | baseline measured locally (zero findings; 8 files would reformat); **not verified on a runner** | T3, T8(a) |
 | AC-5 | **not verified**; baseline resolution recorded | T7 |
