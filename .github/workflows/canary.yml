@@ -1,0 +1,227 @@
+# ==============================================================================
+#  CodeRunner.AI  ::  Dependency canary  (SPEC-CI-001, task T7)
+# ------------------------------------------------------------------------------
+#  Author  : Chun Kang <ck@strpy.com>
+#  Purpose : Once a week, resolve every dependency from scratch — no cache,
+#            `--upgrade` — record what was resolved, and run the whole suite
+#            against it. It exists to find the failure that NO COMMIT CAUSED.
+#
+#  WHY THIS IS A SEPARATE WORKFLOW FROM ci.yml. Both the name and the schedule
+#  are load-bearing. A scheduled job that fails for reasons no commit caused is
+#  the most-ignored kind of job there is, and the fastest way to get it ignored
+#  is to let it be confused with the pull-request gate. Weekly, not daily; a
+#  distinct workflow name; and the resolved versions in the step summary, so
+#  that triage starts from a diff instead of a mystery (plan.md R6).
+#
+#  WHAT IT IS AIMED AT. requirements.txt pins nothing but floors, and the widest
+#  of them is not even first-party. Read off installed metadata, 2026-08-05:
+#
+#      pymilvus 3.0.1  ->  milvus-lite>=2.4.0 ; sys_platform != 'win32'
+#      milvus-lite 3.1.1 ->  faiss-cpu>=1.7.4, grpcio>=1.50, numpy>=1.24,
+#                            pyarrow>=15.0
+#
+#  So the project's real engine floor is 2.4.0 while what actually resolves is
+#  3.1.1 — a whole major version of unpinned range, under which milvus-lite
+#  moved from platform-specific wheels to a `py3-none-any` pure-Python
+#  distribution, and beneath which sit four more floors including a compiled
+#  faiss-cpu. tech.md 6.5 catalogues four undocumented engine quirks this
+#  implementation stands on, and THREE OF THE FOUR FAIL SILENTLY. A storage
+#  engine whose contract is partly folklore, reached through a `>=` that spans a
+#  major version, is exactly what a canary is for.
+#
+#  IT PINS NOTHING. SPEC-CI-001 6 item 3 leaves pinning, lockfiles and digests
+#  to tech.md 8.5 on purpose: this SPEC DETECTS drift, it does not prevent it. A
+#  canary that pins is a canary that cannot sing. The one exact pin it inherits
+#  is `ruff==0.16.1` from requirements-dev.txt, which `--upgrade` honours and
+#  which keeps a linter release from being mistaken for dependency drift.
+#
+#  ---------------------------------------------------------------------------
+#  BASELINE RECORDED AT AUTHORING TIME (2026-08-05) — AND ITS PROVENANCE
+#  ---------------------------------------------------------------------------
+#
+#      pymilvus 3.0.1      milvus-lite 3.1.1   numpy 2.4.6     ollama 0.6.2
+#      httpx 0.28.1        rich 15.0.0         pytest 9.1.1    pytest-cov 7.1.0
+#
+#  READ THE NEXT PARAGRAPHS BEFORE TREATING THAT LIST AS A BASELINE.
+#
+#  SPEC-CI-001 T7 makes re-verification a GATE on trusting it, because the list
+#  entered the SPEC as a PyPI-metadata reading rather than as a measurement
+#  (spec.md F3, plan.md R2). A baseline is worth exactly what its provenance is
+#  worth: calibrated against a wrong starting point, this workflow reports drift
+#  that did not happen and misses drift that did — the two failure modes that
+#  get a canary muted, and then deleted.
+#
+#  THE GATE IS HALF DISCHARGED, AND THE REMAINING HALF IS THE HALF THAT MATTERS
+#  HERE. On 2026-08-05 all eight versions above were reproduced exactly, in a
+#  clean Python 3.11.14 environment, by `pip install --upgrade --no-cache-dir -r
+#  requirements.txt -r requirements-dev.txt`. That upgrades them from a lead to
+#  a measurement — BUT IT WAS TAKEN ON aarch64/macOS, and this job runs on
+#  x86_64 Linux. Resolution differs across exactly that axis: milvus-lite's move
+#  to `py3-none-any` and faiss-cpu's abi3 `manylinux` wheels are platform facts,
+#  and platform-tag availability is the drift class plan.md R2 leaves live. Two
+#  of the eight could differ on the runner without anything having drifted at
+#  all.
+#
+#  To finish discharging it: take the FIRST scheduled or dispatched run's step
+#  summary — which is a resolution on the runner's own platform — and replace
+#  the list above with it, dated. Until that has happened, treat a delta in the
+#  first run's summary as a platform difference to be understood, not as drift
+#  to be reported.
+#
+#  SECOND-ORDER SIGNAL: if this workflow fires more than roughly quarterly, that
+#  is itself evidence a lockfile SPEC is due (tech.md 8.5). The answer then is
+#  reproducible builds, not a quieter canary.
+# ==============================================================================
+
+name: Dependency canary
+
+on:
+  schedule:
+    # Weekly, Mondays. The offset from the top of the hour is deliberate:
+    # GitHub delays scheduled runs that pile up on the hour, and a canary that
+    # reports late is a canary reporting on a resolution nobody can reproduce.
+    # Cron here is UTC and does not observe daylight saving.
+    - cron: "17 6 * * 1"
+  # So a suspected drift can be confirmed the day it is suspected, rather than
+  # next Monday.
+  workflow_dispatch:
+
+# Same posture as ci.yml: nothing here writes to the repository, consumes a
+# secret, or uses a token beyond the default read-scoped GITHUB_TOKEN
+# (SPEC-CI-001 U3, N4).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel. This workflow only ever runs from a schedule or a manual
+  # dispatch — `github.event_name` is never `pull_request` here — so the
+  # expression is constantly false and every run keeps its verdict. It is
+  # written as the same expression ci.yml uses rather than as a bare `false`
+  # so that the two files state one rule, not two coincidentally similar ones.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  canary:
+    name: canary (unpinned resolution, weekly)
+    runs-on: ubuntu-latest
+
+    env:
+      # As Dockerfile:22-23 and the ci.yml `test` job: milvus-lite's gRPC C-core
+      # logs to stderr from beneath Python's logging module.
+      GRPC_VERBOSITY: NONE
+      GLOG_minloglevel: "3"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          # NO `cache:` KEY. Its absence is the requirement (SPEC-CI-001 S2): a
+          # cache hit here would restore last week's wheels and the run would
+          # confirm, at length, that nothing has changed since the last time
+          # nothing changed. A cache hit in the canary defeats the canary.
+
+      - name: Resolve every dependency afresh
+        # `--upgrade` so floors resolve to today's newest satisfying release
+        # rather than to whatever is already present in the runner image, and
+        # `--no-cache-dir` so pip's own on-disk wheel cache cannot reintroduce
+        # the staleness the missing action cache just excluded.
+        run: |
+          python -m pip install --upgrade --no-cache-dir \
+            -r requirements.txt -r requirements-dev.txt
+
+      - name: Record the resolved versions
+        # `always()` IS THE REQUIREMENT (SPEC-CI-001 O2, AC-5), not defensive
+        # habit. A red canary with no version list is an unattributable failure,
+        # and unattributable failures are what get workflows muted. With the
+        # list present, a failure is a diff against the header baseline — and
+        # because NO COMMIT TRIGGERED THIS RUN, that diff is the whole
+        # explanation. That is the entire diagnostic value of a scheduled job,
+        # and it survives only in the failure case.
+        #
+        # Placed before the suite so it is written even when the suite hangs or
+        # is cancelled, and marked `always()` so it is written even when the
+        # resolution step itself failed — a partial environment is evidence too.
+        if: always()
+        run: |
+          set -eu
+
+          # The packages worth a per-line diff: the engine and its transitive
+          # numpy (the drift class this workflow exists for), the three runtime
+          # clients the suite imports by real class, and the test tooling.
+          TRACKED="pymilvus milvus-lite numpy ollama httpx rich pytest pytest-cov"
+
+          # `python -m pip`, never bare `pip`. The summary's only value is that
+          # it describes the environment the suite actually ran under; a bare
+          # `pip` that resolved to a different interpreter would report a
+          # version set nobody tested, which is worse than no summary at all
+          # because it reads as authoritative.
+
+          {
+            echo "## Resolved dependency versions"
+            echo
+            echo "Resolved with \`--upgrade --no-cache-dir\` and no action cache,"
+            echo "on \`${RUNNER_OS}\` / Python \`$(python -V | cut -d' ' -f2)\`."
+            echo
+            echo "Compare against the baseline in this workflow's header — and"
+            echo "read what that header says about the baseline's provenance."
+            echo
+            echo "| Package | Resolved |"
+            echo "|---|---|"
+            for p in $TRACKED; do
+              v=$(python -m pip show "$p" 2>/dev/null | awk '/^Version:/ { print $2 }' || true)
+              echo "| \`$p\` | \`${v:-NOT INSTALLED}\` |"
+            done
+            echo
+            echo "<details><summary>Full <code>pip freeze</code></summary>"
+            echo
+            echo '```'
+            python -m pip freeze || true
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preflight — assert the five imports the suite silently assumes
+        # Present here for the same reason as in ci.yml, and with more force:
+        # the residual risk this workflow watches is precisely a future platform
+        # tag change or an abi3 drop that leaves a package unimportable. The
+        # suite's response to that is to SKIP (conftest.py:153,
+        # tests/test_vectorstore.py:22, tests/test_main_integration.py:25-27),
+        # so without this step the canary's most likely true positive arrives as
+        # a green tick and a lower test count nobody reads.
+        run: |
+          python - <<'PY'
+          import importlib
+          import sys
+
+          REQUIRED = ["rich", "ollama", "httpx", "pymilvus", "milvus_lite"]
+
+          missing = []
+          for name in REQUIRED:
+              try:
+                  importlib.import_module(name)
+              except ImportError as err:
+                  missing.append(f"{name} ({err})")
+              else:
+                  print(f"ok       {name}")
+
+          if missing:
+              print("", file=sys.stderr)
+              print("PREFLIGHT FAILED - today's resolution cannot import:", file=sys.stderr)
+              for item in missing:
+                  print(f"  - {item}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"preflight ok - all {len(REQUIRED)} imports resolved")
+          PY
+
+      - name: Test suite and per-file coverage gate
+        # The same unqualified invocation as ci.yml, against a different
+        # dependency set. No threshold is restated here either (N5); the floors
+        # are at conftest.py:187-192 and nowhere else.
+        run: python -m pytest

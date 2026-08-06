@@ -24,3 +24,16 @@ httpx>=0.27.0
 # unconditional. The `importorskip("milvus_lite")` guard in conftest.py is a
 # safety net for a platform with no wheel, NOT a licence to skip the gate.
 pymilvus[milvus_lite]>=3.0.1
+
+# The linter is the one entry here pinned EXACTLY rather than to a floor, and
+# the asymmetry is deliberate. A floor lets an upstream release add a rule and
+# turn a commit-free Tuesday red: "someone released ruff on Tuesday" becomes
+# "main is red on Tuesday". Two of those and the lint step acquires a
+# `continue-on-error`, which is how a gate stops being one. The measured
+# baseline is ZERO findings at 0.16.1 (2026-08-05) against the standard declared
+# in ruff.toml; the exact pin is what keeps "zero findings" meaning the same
+# thing next week. Upgrading then costs a deliberate commit with a visible diff
+# — which is the right place to argue about a new rule, rather than a red main.
+# CI installs this file, so the linter a developer runs locally and the one the
+# gate runs are the same by construction. SPEC-CI-001 T1.
+ruff==0.16.1
