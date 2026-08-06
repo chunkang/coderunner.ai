@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Test-time dependencies  (SPEC-MEMORY-001, task T1)
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Notice  : NOT installed into the runtime image. These are for `pytest` only.
 #
 #  `ollama` and `httpx` are NOT optional here. recall.py catches

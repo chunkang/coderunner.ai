@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  pytest fixtures and the per-file coverage gate
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Project : SPEC-MEMORY-001, tasks T1 / T-VS10
 #  Purpose : Shared fixtures (`tmp_store`, `fake_embedder`), the record factory
 #            every store-dependent suite builds on, plus enforcement of the

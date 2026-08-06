@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  docker-compose orchestration
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Purpose : Three-service stack — the CodeRunner terminal app, a self-hosted
 #            Ollama server, and a one-shot `model-pull` helper. No dependency
 #            on host-installed Ollama.

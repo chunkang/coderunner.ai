@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Solution Memory — the Milvus Lite storage seam
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Project : SPEC-MEMORY-001 v1.1.0
 #  Purpose : Every `pymilvus` call in the product lives here and nowhere else
 #            (C12/D5). memory.py keeps the record model, truncation, dedupe

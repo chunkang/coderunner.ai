@@ -11,7 +11,7 @@
 #  Description : Terminal-based Code Interpreter Chatbot powered by LLaMA.
 #                Reasons through problems, generates Python code, executes it
 #                in a sandboxed subprocess, and self-corrects on failure.
-#  Author      : kurapa <kurapa@kurapa.com>
+#  Author      : Chun Kang <ck@strpy.com>
 #  License     : See LICENSE
 #  Runtime     : Python 3.11+  |  Docker-only (ephemeral, --rm)
 # ==============================================================================
@@ -226,7 +226,7 @@ SCRIPT_HEADER = textwrap.dedent(
     # ==============================================================================
     #  CodeRunner.AI  ::  Auto-Generated Execution Script
     # ------------------------------------------------------------------------------
-    #  Author   : kurapa <kurapa@kurapa.com>
+    #  Author   : Chun Kang <ck@strpy.com>
     #  Notice   : Ephemeral script, executed inside sandboxed subprocess and removed.
     # ==============================================================================
     '''

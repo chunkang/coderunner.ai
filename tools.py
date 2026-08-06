@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Runtime Tools Library (importable from generated scripts)
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Purpose : Small helpers the model may import from generated code — currently
 #            a stdlib-only web_search() using DuckDuckGo's Instant Answer API.
 # ==============================================================================

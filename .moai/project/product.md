@@ -13,7 +13,7 @@
 | Field | Value |
 | --- | --- |
 | Project name | CodeRunner.AI (`main.py:10`) |
-| Author | kurapa \<kurapa@kurapa.com\> (`main.py:14`) |
+| Author | Chun Kang \<ck@strpy.com\> (`main.py:14`) |
 | License | Apache License 2.0 (`LICENSE:1-3`) |
 | Runtime | Python 3.11+, Docker-only, ephemeral `--rm` (`main.py:16`, `Dockerfile:9`) |
 | Repository state | 2 commits, no tags, no releases |
