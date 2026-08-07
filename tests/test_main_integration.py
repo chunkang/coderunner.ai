@@ -878,3 +878,77 @@ def test_prompt_brackets_every_escape_sequence_for_readline() -> None:
         "as visible columns and history navigation will corrupt the line"
     )
     assert counted == "you ➜ "
+
+
+# ------------------------------------------------------------------------------
+# Streaming render — inline markdown, and the fenced-block placeholder
+# ------------------------------------------------------------------------------
+#
+# The first line-by-line renderer printed lines verbatim, on the stated
+# reasoning that "little is lost in practice". The model's own replies
+# disproved that within one turn: they open with **CODE protocol** and close
+# with **Stop here.**, both of which reached the user as literal asterisks.
+
+
+def test_render_stream_renders_inline_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asterisks must not survive to the terminal as text."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("**CODE protocol** and *soft* and `x = 1`\n"))
+    raw = buf.getvalue()
+
+    assert "**" not in raw
+    assert "CODE protocol" in raw
+    assert "\x1b[1m" in raw  # bold was actually emitted
+
+
+def test_render_stream_hides_a_fenced_block_behind_a_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With hide_code, the block is summarised — show_code() renders it below.
+
+    Without this the same lines appear twice: once unhighlighted inside the
+    reasoning, once in the Generated Script panel.
+    """
+    buf = _captured_console(monkeypatch)
+    reply = "before\n```python\nimport requests\nprint(1)\n```\nafter\n"
+    result = main.render_stream("T", "cyan", _chunks(reply), hide_code=True)
+    raw = buf.getvalue()
+
+    assert result == reply  # the RETURN value must stay complete; extraction needs it
+    assert "import requests" not in raw
+    assert "2 lines of code" in raw
+    assert "before" in raw and "after" in raw
+
+
+def test_render_stream_keeps_code_when_hide_code_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The final Answer has no show_code() after it, so its code must survive.
+
+    Defaulting hide_code to True would silently delete a fenced block from the
+    one place it is never rendered again.
+    """
+    buf = _captured_console(monkeypatch)
+    main.render_stream("Answer", "magenta", _chunks("see:\n```python\nprint(1)\n```\n"))
+    assert "print(1)" in buf.getvalue()
+
+
+def test_render_stream_placeholder_survives_an_unclosed_fence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A truncated stream can end inside a fence; the reader is still owed a marker."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("x\n```python\nprint(1)\n"), hide_code=True)
+    raw = buf.getvalue()
+    assert "print(1)" not in raw
+    assert "line of code" in raw
+
+
+def test_render_stream_does_not_mistake_bold_for_italic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`**x**` must not be read as an emphasised `*x*` with stray asterisks."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("**bold**\n"))
+    raw = buf.getvalue()
+    assert "*" not in raw

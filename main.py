@@ -196,8 +196,65 @@ def stream_llm(client: ollama.Client, messages: list[dict]) -> Iterator[str]:
 # whole growing panel.
 STREAM_REFRESH_PER_SEC = 12
 
+# Only the markdown constructs that OPEN AND CLOSE ON ONE LINE can be rendered
+# by a renderer that never revisits a line. That is the whole constraint here,
+# and it is not a limitation of the regex: a fenced block or a table is not
+# renderable until its closing delimiter arrives, and waiting for that is what
+# forces whole-document re-rendering and the flicker with it.
+#
+# Bold before italic, and the italic branch refuses a neighbouring asterisk, so
+# `**x**` is never mistaken for an emphasised `*x*`.
+_INLINE_MD_RE = re.compile(
+    r"\*\*(?P<bold>[^*]+)\*\*"
+    r"|(?<!\*)\*(?P<italic>[^*\s][^*]*)\*(?!\*)"
+    r"|`(?P<code>[^`]+)`"
+)
 
-def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
+_FENCE_RE = re.compile(r"^\s*```")
+
+
+def _render_markdown_line(line: str) -> Text:
+    """Style the inline markdown in one line. Anything else is passed through."""
+    out = Text()
+    pos = 0
+    for match in _INLINE_MD_RE.finditer(line):
+        out.append(line[pos : match.start()])
+        if match.group("bold") is not None:
+            out.append(match.group("bold"), style="bold")
+        elif match.group("italic") is not None:
+            out.append(match.group("italic"), style="italic")
+        else:
+            out.append(match.group("code"), style="bold cyan")
+        pos = match.end()
+    out.append(line[pos:])
+    return out
+
+
+def _code_placeholder(lines: int) -> Text:
+    plural = "" if lines == 1 else "s"
+    return Text(f"  … {lines} line{plural} of code, shown below …", style="dim italic")
+
+
+def _emit_line(line: str, fence_depth: int, fence_lines: int, hide_code: bool) -> tuple[int, int]:
+    """Print one completed line, tracking fenced-block state. Returns the new state."""
+    if _FENCE_RE.match(line):
+        if fence_depth:  # closing fence
+            if hide_code:
+                console.print(_code_placeholder(fence_lines))
+            return 0, 0
+        return 1, 0  # opening fence
+    if fence_depth:
+        if hide_code:
+            return fence_depth, fence_lines + 1
+        console.print(Text(line, style="dim"))
+        return fence_depth, fence_lines + 1
+    console.print(_render_markdown_line(line))
+    return fence_depth, fence_lines
+
+
+def render_stream(
+    title: str, style: str, token_iter: Iterator[str], *, hide_code: bool = False
+) -> str:
     """Print the model's reply one completed line at a time, never repainting it.
 
     The predecessor wrapped a growing ``Panel(Markdown(...))`` in a ``Live`` and
@@ -214,17 +271,28 @@ def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
     first newline would show nothing at all while producing it, which is the
     "it is doing something but showing nothing" complaint in another costume.
 
-    **The cost is markdown rendering, and it is a real cost.** A fenced code
-    block cannot be rendered a line at a time — the fence is only meaningful as
-    a pair — so lines are printed verbatim. Little is lost in practice: the
-    extracted code is separately syntax-highlighted by ``show_code()``, and what
-    is left here is prose. Restoring markdown means restoring whole-document
-    re-rendering, and with it the flicker; do not do one without the other.
+    Inline markdown IS rendered, per line, by ``_render_markdown_line``. The
+    first version of this function printed lines verbatim on the reasoning that
+    "little is lost in practice"; that was wrong, and the model's own replies
+    disproved it immediately — it opens with ``**CODE protocol**`` and closes
+    with ``**Stop here.**``, both of which reached the user as literal asterisks.
+
+    ``hide_code`` suppresses fenced blocks, replacing each with a one-line
+    placeholder. Pass it ONLY where the code is displayed again straight after:
+    ``show_code()`` renders the extracted block with syntax highlighting, so
+    without this the same fifteen lines appear twice, once unhighlighted. It
+    must stay off for the final answer, which has no such second rendering — a
+    fenced block there would simply vanish.
     """
-    console.print(Rule(title, style=style, align="left"))
+    # Text(), not the bare string: Rich's automatic highlighter picks numbers
+    # out of a plain str, so "Thought · attempt 1" rendered its digit in a
+    # different colour to the words beside it.
+    console.print(Rule(Text(title), style=style, align="left"))
 
     buffer: list[str] = []
     pending = ""
+    fence_depth = 0
+    fence_lines = 0
     with Live(Text(""), console=console, refresh_per_second=STREAM_REFRESH_PER_SEC,
               transient=True) as live:
         for token in token_iter:
@@ -233,13 +301,19 @@ def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
             # A token can carry several newlines, or none.
             while "\n" in pending:
                 line, pending = pending.split("\n", 1)
-                console.print(Text(line))
-            live.update(Text(pending))
+                fence_depth, fence_lines = _emit_line(line, fence_depth, fence_lines, hide_code)
+            # The in-flight tail is deliberately NOT markdown-rendered: it is a
+            # partial line, so `**bo` has no closing marker yet and would render
+            # literally, then change under the reader as the rest arrives.
+            live.update(Text("" if fence_depth else pending))
 
     # The stream can end mid-line; the Live region was transient, so that tail
     # has just been erased and has to be reprinted as permanent output.
     if pending:
-        console.print(Text(pending))
+        fence_depth, fence_lines = _emit_line(pending, fence_depth, fence_lines, hide_code)
+    # An unterminated fence still owes the reader its placeholder.
+    if hide_code and fence_depth and fence_lines:
+        console.print(_code_placeholder(fence_lines))
     console.print(Rule(style=style))
     return "".join(buffer)
 
@@ -653,6 +727,9 @@ def agentic_turn(
             title=f"Thought · attempt {attempt}",
             style="cyan",
             token_iter=thought_tokens,
+            # show_code() renders the extracted block below with syntax
+            # highlighting; without this the same lines print twice.
+            hide_code=True,
         )
         conv.assistant(thought)
 
