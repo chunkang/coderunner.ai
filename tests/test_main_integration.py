@@ -974,3 +974,37 @@ def test_render_stream_does_not_mistake_bold_for_italic(
     main.render_stream("T", "cyan", _chunks("**bold**\n"))
     raw = buf.getvalue()
     assert "*" not in raw
+
+
+def test_in_flight_line_renders_exactly_as_it_will_settle() -> None:
+    """A line must not change costume when its newline arrives.
+
+    This is the "not natural" complaint, expressed as an assertion. When the
+    tail was rendered plain-and-dim while the settled line was numbered and
+    highlighted, every line visibly restyled at the instant it completed:
+    characters flowed in, then the finished line blinked into a different
+    appearance. That reads as lines being posted one at a time rather than as a
+    stream.
+
+    Asserting on the RENDERED output is the only way to catch it — both
+    versions display the correct text, and they differ only in styling.
+    """
+    for fence_depth, highlight in ((1, True), (1, False), (0, False)):
+        in_flight = main._style_line("import req", fence_depth, 1, highlight)
+        settled = main._style_line("import requests", fence_depth, 1, highlight)
+
+        # Same prefix, same spans over it: the tail is the settled line, shorter.
+        assert settled.plain.startswith(in_flight.plain)
+        assert [(s.start, s.style) for s in in_flight.spans if s.start == 0] == [
+            (s.start, s.style) for s in settled.spans if s.start == 0
+        ]
+
+
+def test_a_fence_marker_is_never_shown_even_half_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``` must not flash into view while the opening fence is being typed."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("x\n```python\nprint(1)\n```\n"),
+                       highlight_code=True)
+    assert "```" not in _visible(buf.getvalue())

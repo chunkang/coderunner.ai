@@ -258,6 +258,24 @@ def _render_code_line(line: str, number: int) -> Text:
     return out
 
 
+def _style_line(line: str, fence_depth: int, fence_lines: int, highlight_code: bool) -> Text:
+    """Render one line exactly as it will finally appear.
+
+    Used for BOTH the in-flight tail and the permanent print, and that is the
+    whole reason it exists as a function. When the two differed — the tail plain
+    and dim, the settled line numbered and coloured — every line visibly changed
+    costume at the instant its newline arrived. Characters would flow in, then
+    the finished line would blink into a different style. It read as stilted,
+    line-at-a-time output rather than as a stream, which is what it is.
+
+    Rendering the tail identically means nothing changes when a line completes.
+    The text simply keeps flowing.
+    """
+    if fence_depth:
+        return _render_code_line(line, fence_lines) if highlight_code else Text(line, style="dim")
+    return _render_markdown_line(line)
+
+
 def _emit_line(
     line: str, fence_depth: int, fence_lines: int, highlight_code: bool
 ) -> tuple[int, int]:
@@ -266,11 +284,7 @@ def _emit_line(
         return (0, 0) if fence_depth else (1, 0)
     if fence_depth:
         fence_lines += 1
-        console.print(
-            _render_code_line(line, fence_lines) if highlight_code else Text(line, style="dim")
-        )
-        return fence_depth, fence_lines
-    console.print(_render_markdown_line(line))
+    console.print(_style_line(line, fence_depth, fence_lines, highlight_code))
     return fence_depth, fence_lines
 
 
@@ -331,13 +345,19 @@ def render_stream(
                 fence_depth, fence_lines = _emit_line(
                     line, fence_depth, fence_lines, highlight_code
                 )
-            # The in-flight tail is deliberately NOT markdown-rendered or
-            # highlighted: it is a partial line, so `**bo` has no closing marker
-            # yet and would render literally, then change under the reader as
-            # the rest arrives. It is shown inside a fence as well as outside —
-            # a half-written line of code is exactly what the reader wants to
-            # see while it is being written.
-            live.update(Text(pending, style="dim" if fence_depth else ""))
+            # The tail is rendered EXACTLY as it will settle (see _style_line).
+            # It is what makes this read as a stream rather than as lines being
+            # posted one at a time: characters flow into a line that already
+            # carries its gutter number and its colours, and completing it
+            # changes nothing on screen.
+            #
+            # A fence marker is never shown, so a tail that is opening one stays
+            # blank until its newline flips the state.
+            live.update(
+                Text("")
+                if _FENCE_RE.match(pending)
+                else _style_line(pending, fence_depth, fence_lines + 1, highlight_code)
+            )
 
     # The stream can end mid-line; the Live region was transient, so that tail
     # has just been erased and has to be reprinted as permanent output.
