@@ -254,11 +254,18 @@ _PY_HIGHLIGHTER = Syntax("", "python", theme="monokai", background_color="defaul
 #   │ U+2502 light   ┃ U+2503 heavy   ▎ U+258E quarter
 #   ▌ U+258C half    ▊ U+258A three-quarter   █ U+2588 full
 #
-# Weight now comes from the GLYPH, not the attribute: `bold` brightens a
-# stroked character but does almost nothing to a filled one. The style is kept
-# because several terminals do brighten the colour, and it costs nothing.
+# Weight comes from the GLYPH, not the attribute: `bold` brightens a stroked
+# character but does almost nothing to a filled one. The colour is what the
+# attribute is for here.
+#
+# `bright_green` is a NAMED ANSI colour, deliberately, not a hex triple. A
+# truecolor value degrades unpredictably — the colour system is resolved from
+# the environment, and CI has already produced one failure that way (a runner
+# with TERM unset renders in 16 colours). One of the sixteen standard colours
+# renders as itself everywhere, including in the container, which sets
+# TERM=xterm-256color at Dockerfile:11-23.
 _CODE_RAIL = "  █ "
-_CODE_RAIL_STYLE = "bold"
+_CODE_RAIL_STYLE = "bold bright_green"
 
 
 def _render_code_line(line: str, number: int) -> Text:
