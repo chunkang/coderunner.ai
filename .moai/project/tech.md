@@ -274,10 +274,10 @@ mountpoint, the embedding model and whether it is present (or
 ### 5.3 Iterating on the code
 
 There is still no dev-mode source mount. The `coderunner` service does now
-declare a `volumes` key (`docker-compose.yml:67-68`), but it mounts
+declare a `volumes` key (`docker-compose.yml:74-75`), but it mounts
 `coderunner_app_data` at `/home/runner/.coderunner` for solution memory — **no
 host path is projected into the container and no source file is mounted.**
-`Dockerfile:34` bakes all five modules into the image. Combined with the
+`Dockerfile:34` bakes every application module into the image. Combined with the
 build-only-if-absent guard at `coderunner:163`, **the edit/run loop requires an
 explicit rebuild**:
 
@@ -535,9 +535,9 @@ the runtime executes it.* Here is precisely what is and is not in place.
 | Guaranteed cleanup | `shutil.rmtree(workdir, ignore_errors=True)` in a `finally` block — runs on success, failure, timeout, and unexpected exception | `main.py:285-286` |
 | Non-root container user | A dedicated `runner` account owns `/app` and `/home/runner/.coderunner`; the process never runs as root | `Dockerfile:42-46` |
 | Ephemeral container | `compose run --rm` plus `restart: "no"`. **Amended at SPEC-MEMORY-001:** the app service now mounts one named volume, so this no longer means "nothing generated code writes survives the session" — see §7.2 | `coderunner:263`, `docker-compose.yml:60-102` |
-| No host bind mounts | The `coderunner` service's only `volumes` entry is a **named** volume (`docker-compose.yml:67-68`). No host path is projected into the container, and the host filesystem remains unreachable | `docker-compose.yml:67-68` |
+| No host bind mounts | The `coderunner` service's only `volumes` entry is a **named** volume (`docker-compose.yml:74-75`). No host path is projected into the container, and the host filesystem remains unreachable. **This control is what disqualified the runtime-channel designs for SPEC-KEYCHAIN-001 (§7.2)** — a bind-mounted helper socket would reverse it | `docker-compose.yml:74-75` |
 | No published Ollama port | The sidecar is not exposed to the host network | `docker-compose.yml:21` |
-| Deterministic-code instruction | The system prompt forbids `input()` and infinite loops and requires self-contained scripts. **This is guidance to the model, not enforcement** | `main.py:135` |
+| Deterministic-code instruction | The system prompt forbids `input()` and infinite loops and requires self-contained scripts, and directs the model to declare a `# @param` instead of calling `input()`. **This is guidance to the model, not enforcement** | `main.py:139` |
 
 ### 7.2 Controls that are NOT implemented
 
@@ -546,7 +546,8 @@ the runtime executes it.* Here is precisely what is and is not in place.
 | No `seccomp` or AppArmor profile | Compose declares no `security_opt`. The container runs Docker's default seccomp profile only; no syscall surface is narrowed for the specific risk of executing model-written code |
 | No `cap_drop` | No `cap_drop: [ALL]` anywhere in `docker-compose.yml`. The container keeps Docker's default capability set |
 | No `read_only: true` root filesystem | Generated code can write anywhere the `runner` user can — including **overwriting `/app/main.py`, `/app/tools.py`, `/app/memory.py`, `/app/recall.py` and `/app/vectorstore.py`**, since `Dockerfile:45` chowns `/app` to `runner`. Within a single session that is a live code-modification vector; the ephemeral container limits the blast radius to that session — **except for the memory volume, which is not ephemeral. See below** |
-| **No isolation of the solution-memory store from generated code** | **New at SPEC-MEMORY-001, and the only genuinely new item in this table.** See the paragraphs that follow |
+| **No isolation of the solution-memory store from generated code** | **New at SPEC-MEMORY-001.** See the paragraphs that follow |
+| **No confidentiality for a value passed into the container's environment** | **New at SPEC-KEYCHAIN-001.** `docker inspect` prints `Config.Env` in plaintext, and `/proc/1/environ` inside the container carries it for the same `runner` uid generated code runs as. See the paragraphs that follow |
 | No memory, CPU, or PID limits | No `mem_limit`, `cpus`, or `pids_limit` in `docker-compose.yml`. A generated fork bomb or an allocation loop is bounded only by the wall-clock timeout, which does not prevent it from exhausting host resources first. `init: true` (`docker-compose.yml:62`) reaps zombies but caps nothing |
 | No network restriction | The container has full egress, and this is **by design**: the system prompt explicitly states *"Network access IS allowed for scraping"* and names wttr.in, the Wikipedia REST API, and DuckDuckGo as targets (`main.py:121-131`). Generated code therefore inherits full outbound internet access **and** can reach `http://ollama:11434` directly on the compose network |
 | No static screening of generated code | `extract_last_python_block()` (`main.py:218-220`) is a regex extraction with no AST inspection, no import allowlist, no denylist, no length cap, and no user confirmation step. Whatever the model emits between the fences is written to disk and run |
@@ -589,6 +590,72 @@ to see what is stored, `/memory clear --yes` to empty it,
 to run without any of it. There is no encryption at rest, no per-record ACL, and
 no integrity check on stored records — and none is planned.
 
+#### The container environment is a sink, and `--set-secret` puts things in it
+
+`./coderunner --set-secret NAME` keeps a value in the host's credential store and
+the launcher passes it into the container as `CODERUNNER_SECRET_<NAME>`. That is
+a convenience feature, its priority is `LOW`, and the reason is this section.
+
+Measured 2026-08-07:
+
+```
+$ docker run -d -e MY_SECRET=hunter2 … coderunner-ai:latest
+$ docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' <id> | grep -i secret
+MY_SECRET=hunter2
+
+$ docker exec <id> sh -c 'tr "\0" "\n" < /proc/1/environ | grep -i secret; id'
+MY_SECRET=hunter2
+uid=1000(runner) gid=1000(runner) groups=1000(runner)
+```
+
+Both routes are real and neither is a property of *how* the value is passed —
+`-e NAME`, `-e NAME=value` and `--env-from-file` all produce the same
+`Config.Env` record. It is a property of the container having an environment.
+
+`main.py` pops every `CODERUNNER_SECRET_*` variable out of `os.environ` at import
+(`keychain.load()`), which was measured to close the `os.environ` route for
+children started by `run_python()` — and measured **not** to close either
+`/proc/self/environ` or `/proc/1/environ`. It is a mitigation with a stated
+ceiling, not a fix.
+
+Two qualifications, and the second is why the first is not a defence:
+
+1. **Docker-daemon access is already root-equivalent on the host.** Someone who
+   can `docker inspect` can `docker run -v /:/host`. This project grants that
+   capability itself — `coderunner:83-84` adds the invoking user to the `docker`
+   group. The marginal exposure over what such an observer already has is small.
+2. **Small is not zero, and on Linux the group is often wider than the person.**
+   An observer with root-equivalent access who has not used it still learns the
+   secret from a one-line command, with no filesystem forensics and no timing.
+   On a shared machine the `docker` group can hold accounts that were never meant
+   to hold this key. The same discipline §7.2 applies to the memory store applies
+   here: name the capability, name what is new, and do not let the first cancel
+   the second.
+
+The container is `--rm` (`coderunner:263`, `docker-compose.yml:109`), so the
+`Config.Env` record exists only while the session runs and is destroyed with the
+container. It is transient. It is not absent.
+
+**One consequence for SPEC-INPUT-001's capture policy.** A keychain-sourced value
+enters `values` before `params.collect_values()` runs, so everything downstream is
+byte-for-byte the typed-value path: it is rendered through the single `repr()`
+site, it joins the redaction set, and under `never` the turn is not captured at
+all. What changes is not what `sensitive_excluded` governs but what it can be
+truthfully said to mean:
+
+| Statement | Before SPEC-KEYCHAIN-001 | After, for a keychain-sourced value |
+| --- | --- | --- |
+| "The secret is not in solution memory" (under `sensitive_excluded`) | true | **still true** |
+| "The secret is not in readline history" | true | **still true** |
+| "The secret is not on disk after the session" | true | **still true of the container**; the host keychain now holds it, by the user's own instruction |
+| "The secret is not readable by anything outside this process tree" | true-ish | **false** — `docker inspect` |
+| "This turn was not stored" (under `never`) | true, and complete | **true, and no longer complete** — the value is in `Config.Env` for the session regardless of policy |
+
+The last row is the one that must reach the user. `never` was offered as the
+option for people who need a guarantee rather than a reduction; it is still the
+strongest capture policy and it **no longer bounds the exposure**, because the
+exposure is now outside the store the policy governs.
+
 ### 7.3 Honest summary
 
 `README.md` says it correctly, and this documentation carries the same statement
@@ -599,6 +666,25 @@ forward without softening:
 > against sensitive hosts. Note that generated code runs as the same `runner`
 > user that owns the memory volume, and can therefore read, corrupt or delete
 > the store.
+
+And `README.md` carries SPEC-KEYCHAIN-001's accounting in the same unsoftened
+form. It is reproduced here verbatim, because a limitation that lives in only one
+document is a limitation one edit away from disappearing:
+
+> `./coderunner --set-secret` keeps a value in your operating system's credential store instead of
+> in your fingers. While a session is running, that value is present in the container's environment,
+> where **anyone able to query the Docker daemon can read it in plaintext with `docker inspect`**,
+> and where the generated code that needs it can read it — as it must. The container is `--rm`, so
+> the record is destroyed when the session ends.
+>
+> This feature does **not** make a secret private. It removes the need to retype it and it adds a
+> reader: the Docker daemon. Docker-daemon access is already root-equivalent on the host, so the
+> marginal exposure is small — and it is not zero.
+>
+> If you need a secret that the Docker daemon cannot see, do not use this feature. Type it at the
+> prompt, where SPEC-INPUT-001 already routes it through `getpass` and keeps it out of readline
+> history, out of the rendered script, and — under the `sensitive_excluded` or `never` capture
+> policies — out of solution memory.
 
 The design is appropriate for a single-user local tool where the operator writes
 their own prompts. It is **not** appropriate as a multi-tenant service, as a
