@@ -783,6 +783,24 @@ def _captured_console(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
     return buf
 
 
+# Which ESCAPE CODE carries a colour is decided by the environment, and not by
+# anything a test can pin after the fact. main._PY_HIGHLIGHTER is a module-level
+# Syntax built at IMPORT time, so its theme is baked against whatever colour
+# system the console resolved to then: truecolor (\x1b[38;2;R;G;B) on a
+# developer machine with COLORTERM set, plain 16-colour (\x1b[91;49m) on a
+# GitHub runner with TERM unset. Re-pinning the console afterwards does not
+# change it — the Text already holds downgraded colours.
+#
+# So assertions here match ANY foreground colour: truecolor, 256, bright, or
+# standard. The claim under test is "this text is coloured", never "coloured
+# this particular way". The first version of this suite asserted \x1b[38;2;
+# and failed on its first ever CI run for exactly this reason.
+_ANY_FG_COLOUR = re.compile(r"\x1b\[(?:38;[25];|9[0-7]|3[0-7])")
+# A dim that has leaked onto coloured text: SGR 2 combined with a colour in one
+# sequence, in whatever encoding that colour happens to use.
+_DIM_ON_COLOUR = re.compile(r"\x1b\[2;\d")
+
+
 def _visible(raw: str) -> str:
     """The text a human sees, with every ANSI sequence removed.
 
@@ -930,7 +948,7 @@ def test_render_stream_highlights_code_lines_as_they_arrive(
     seen = _visible(raw)
     assert result == reply  # the RETURN value must stay complete; extraction needs it
     assert "import requests" in seen
-    assert "\x1b[38;2;" in raw  # pygments colour was actually emitted
+    assert _ANY_FG_COLOUR.search(raw)  # pygments colour was actually emitted
     assert "   1 " in seen and "   2 " in seen  # gutter numbering, restarting per block
     assert "```" not in seen  # the fence markers themselves are not shown
     assert "before" in seen and "after" in seen
@@ -952,7 +970,7 @@ def test_render_stream_does_not_dim_the_highlighted_code(
     raw = buf.getvalue()
 
     assert "\x1b[2m" in raw  # the gutter IS dim
-    assert "[2;38;2;" not in raw  # ...and the code is NOT
+    assert not _DIM_ON_COLOUR.search(raw)  # ...and the code is NOT, in any encoding
 
 
 def test_render_stream_leaves_code_plain_when_highlighting_is_off(
