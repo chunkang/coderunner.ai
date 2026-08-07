@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -850,3 +851,30 @@ def test_render_stream_tolerates_an_empty_stream(
 ) -> None:
     _captured_console(monkeypatch)
     assert main.render_stream("Thought", "cyan", iter([])) == ""
+
+
+# ------------------------------------------------------------------------------
+# Prompt — readline must be told which prompt bytes are invisible
+# ------------------------------------------------------------------------------
+
+
+def test_prompt_brackets_every_escape_sequence_for_readline() -> None:
+    """The prompt renders identically whether or not this holds. Only history breaks.
+
+    readline counts every unbracketed byte as a visible column, so the colour
+    escapes must sit inside \\001...\\002 (RL_PROMPT_START_IGNORE /
+    RL_PROMPT_END_IGNORE). Without them readline's idea of the cursor column is
+    eleven too far right, every redraw starts from the wrong origin, and
+    recalling an entry with Up appends to the current line instead of replacing
+    it.
+
+    Asserting on the rendered prompt would catch none of this — it looks correct
+    either way. The assertion has to be on what readline *counts*.
+    """
+    counted = re.sub("\001[^\002]*\002", "", main.PROMPT)
+
+    assert "\033" not in counted, (
+        "an escape sequence is outside \\001...\\002, so readline will count it "
+        "as visible columns and history navigation will corrupt the line"
+    )
+    assert counted == "you ➜ "

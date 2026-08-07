@@ -792,12 +792,28 @@ def _install_history() -> None:
     atexit.register(_save)
 
 
+# readline counts EVERY byte of the prompt as one visible column unless it is
+# bracketed by \001 (RL_PROMPT_START_IGNORE) and \002 (RL_PROMPT_END_IGNORE).
+#
+# Unbracketed, the eleven bytes of colour escape here are counted as eleven
+# columns, so readline believes the cursor sits eleven columns to the right of
+# where it is. Every redraw is then computed from a wrong origin — and a redraw
+# is exactly what Up and Down do. Recalling an entry erases the wrong span, so
+# the recalled text appears appended to whatever was already on the line
+# instead of replacing it. The bug is invisible until the user presses an arrow
+# key, which is why a prompt that looks perfect can still be wrong.
+#
+# The brackets are the fix and they are not decoration: remove them and the
+# history navigation breaks again, silently, while the prompt still renders
+# correctly.
+PROMPT = "\001\033[1;32m\002you\001\033[0m\002 ➜ "
+
+
 def _prompt_user() -> str:
     """Read a line with arrow-key history. Rich handles the banner/rendering;
     the actual input() call is what gives us readline's line-editing."""
     console.file.flush()
-    # Bright-green prompt, ANSI directly so readline sees a clean terminal.
-    return input("\033[1;32myou\033[0m ➜ ")
+    return input(PROMPT)
 
 
 def repl() -> None:
