@@ -783,6 +783,17 @@ def _captured_console(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
     return buf
 
 
+def _visible(raw: str) -> str:
+    """The text a human sees, with every ANSI sequence removed.
+
+    Syntax highlighting puts an escape sequence BETWEEN every pygments token,
+    so `import requests` never appears as a contiguous substring of the raw
+    stream even though it is exactly what the terminal draws. Assertions about
+    content belong here; assertions about styling belong on the raw bytes.
+    """
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw)
+
+
 def _chunks(text: str, size: int = 3) -> Iterator[str]:
     """Split into small pieces, the way a real token stream arrives."""
     return iter([text[i : i + size] for i in range(0, len(text), size)])
@@ -901,47 +912,58 @@ def test_render_stream_renders_inline_markdown(monkeypatch: pytest.MonkeyPatch) 
     assert "\x1b[1m" in raw  # bold was actually emitted
 
 
-def test_render_stream_hides_a_fenced_block_behind_a_placeholder(
+def test_render_stream_highlights_code_lines_as_they_arrive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With hide_code, the block is summarised — show_code() renders it below.
+    """The code must appear WHILE it is written, numbered and highlighted.
 
-    Without this the same lines appear twice: once unhighlighted inside the
-    reasoning, once in the Generated Script panel.
+    Its predecessor suppressed the block behind a placeholder to remove the
+    duplication with show_code(). That removed the duplication and the live
+    view with it: writing the script is the longest stretch of a turn, so it
+    became the one stretch with nothing on screen.
     """
     buf = _captured_console(monkeypatch)
     reply = "before\n```python\nimport requests\nprint(1)\n```\nafter\n"
-    result = main.render_stream("T", "cyan", _chunks(reply), hide_code=True)
+    result = main.render_stream("T", "cyan", _chunks(reply), highlight_code=True)
     raw = buf.getvalue()
 
+    seen = _visible(raw)
     assert result == reply  # the RETURN value must stay complete; extraction needs it
-    assert "import requests" not in raw
-    assert "2 lines of code" in raw
-    assert "before" in raw and "after" in raw
+    assert "import requests" in seen
+    assert "\x1b[38;2;" in raw  # pygments colour was actually emitted
+    assert "   1 " in seen and "   2 " in seen  # gutter numbering, restarting per block
+    assert "```" not in seen  # the fence markers themselves are not shown
+    assert "before" in seen and "after" in seen
 
 
-def test_render_stream_keeps_code_when_hide_code_is_off(
+def test_render_stream_does_not_dim_the_highlighted_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The final Answer has no show_code() after it, so its code must survive.
+    """Only the gutter is dim. Text(..., style=) sets a BASE style that leaks.
 
-    Defaulting hide_code to True would silently delete a fenced block from the
-    one place it is never rendered again.
+    Building the line as Text(f"{n} ", style="dim") applies dim to everything
+    appended afterwards, washing out every pygments colour on the line. The
+    rendered result still looks like code, just uniformly faded, so nothing but
+    an assertion on the emitted attributes catches it.
     """
     buf = _captured_console(monkeypatch)
-    main.render_stream("Answer", "magenta", _chunks("see:\n```python\nprint(1)\n```\n"))
-    assert "print(1)" in buf.getvalue()
+    main.render_stream("T", "cyan", _chunks("```python\nimport requests\n```\n"),
+                       highlight_code=True)
+    raw = buf.getvalue()
+
+    assert "\x1b[2m" in raw  # the gutter IS dim
+    assert "[2;38;2;" not in raw  # ...and the code is NOT
 
 
-def test_render_stream_placeholder_survives_an_unclosed_fence(
+def test_render_stream_leaves_code_plain_when_highlighting_is_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A truncated stream can end inside a fence; the reader is still owed a marker."""
+    """The final Answer streams without highlighting, but must still show code."""
     buf = _captured_console(monkeypatch)
-    main.render_stream("T", "cyan", _chunks("x\n```python\nprint(1)\n"), hide_code=True)
-    raw = buf.getvalue()
-    assert "print(1)" not in raw
-    assert "line of code" in raw
+    main.render_stream("Answer", "magenta", _chunks("see:\n```python\nprint(1)\n```\n"))
+    seen = _visible(buf.getvalue())
+    assert "print(1)" in seen
+    assert "   1 " not in seen  # no gutter outside the reasoning stream
 
 
 def test_render_stream_does_not_mistake_bold_for_italic(

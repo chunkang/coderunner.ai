@@ -230,30 +230,52 @@ def _render_markdown_line(line: str) -> Text:
     return out
 
 
-def _code_placeholder(lines: int) -> Text:
-    plural = "" if lines == 1 else "s"
-    return Text(f"  … {lines} line{plural} of code, shown below …", style="dim italic")
+# `background_color="default"` is not cosmetic. Without it every highlighted
+# line carries monokai's own dark background, which paints a ragged block behind
+# each line as it arrives — the lines have different lengths, so the result
+# looks like torn paper rather than a code listing.
+_PY_HIGHLIGHTER = Syntax("", "python", theme="monokai", background_color="default")
 
 
-def _emit_line(line: str, fence_depth: int, fence_lines: int, hide_code: bool) -> tuple[int, int]:
+def _render_code_line(line: str, number: int) -> Text:
+    """One line of the generated script, numbered and syntax-highlighted.
+
+    Highlighting a line in isolation is imperfect by construction — a string
+    literal or a bracket left open on a previous line is not visible from here,
+    so pygments occasionally colours a continuation wrongly. That is accepted:
+    the alternative is withholding the code until its closing fence arrives,
+    which is precisely the "it appears all at once" complaint this replaced.
+    """
+    # Text() then append(style=...), NOT Text(..., style="dim"). The latter sets
+    # a BASE style on the object, which applies to everything appended after it
+    # too — the gutter's dim leaked onto every highlighted token and washed the
+    # whole listing out.
+    out = Text()
+    out.append(f"{number:>4} ", style="dim")
+    highlighted = _PY_HIGHLIGHTER.highlight(line)
+    highlighted.rstrip()  # highlight() appends the newline pygments emitted
+    out.append_text(highlighted)
+    return out
+
+
+def _emit_line(
+    line: str, fence_depth: int, fence_lines: int, highlight_code: bool
+) -> tuple[int, int]:
     """Print one completed line, tracking fenced-block state. Returns the new state."""
     if _FENCE_RE.match(line):
-        if fence_depth:  # closing fence
-            if hide_code:
-                console.print(_code_placeholder(fence_lines))
-            return 0, 0
-        return 1, 0  # opening fence
+        return (0, 0) if fence_depth else (1, 0)
     if fence_depth:
-        if hide_code:
-            return fence_depth, fence_lines + 1
-        console.print(Text(line, style="dim"))
-        return fence_depth, fence_lines + 1
+        fence_lines += 1
+        console.print(
+            _render_code_line(line, fence_lines) if highlight_code else Text(line, style="dim")
+        )
+        return fence_depth, fence_lines
     console.print(_render_markdown_line(line))
     return fence_depth, fence_lines
 
 
 def render_stream(
-    title: str, style: str, token_iter: Iterator[str], *, hide_code: bool = False
+    title: str, style: str, token_iter: Iterator[str], *, highlight_code: bool = False
 ) -> str:
     """Print the model's reply one completed line at a time, never repainting it.
 
@@ -277,12 +299,17 @@ def render_stream(
     disproved it immediately — it opens with ``**CODE protocol**`` and closes
     with ``**Stop here.**``, both of which reached the user as literal asterisks.
 
-    ``hide_code`` suppresses fenced blocks, replacing each with a one-line
-    placeholder. Pass it ONLY where the code is displayed again straight after:
-    ``show_code()`` renders the extracted block with syntax highlighting, so
-    without this the same fifteen lines appear twice, once unhighlighted. It
-    must stay off for the final answer, which has no such second rendering — a
-    fenced block there would simply vanish.
+    ``highlight_code`` numbers and syntax-highlights the lines inside a fenced
+    block as they arrive. Its predecessor did the opposite — suppressed the
+    block behind a "… 15 lines of code, shown below …" placeholder, on the
+    grounds that ``show_code()`` re-rendered it below and the duplication was
+    waste. That removed the duplication and took the live view with it: writing
+    the script is the LONGEST stretch of a turn, and it became the one stretch
+    with nothing on screen, after which finished code appeared all at once.
+
+    So the code streams and the separate panel is gone. What was two renderings
+    of the same lines — one live and plain, one final and highlighted — is now
+    one that is both.
     """
     # Text(), not the bare string: Rich's automatic highlighter picks numbers
     # out of a plain str, so "Thought · attempt 1" rendered its digit in a
@@ -301,19 +328,21 @@ def render_stream(
             # A token can carry several newlines, or none.
             while "\n" in pending:
                 line, pending = pending.split("\n", 1)
-                fence_depth, fence_lines = _emit_line(line, fence_depth, fence_lines, hide_code)
-            # The in-flight tail is deliberately NOT markdown-rendered: it is a
-            # partial line, so `**bo` has no closing marker yet and would render
-            # literally, then change under the reader as the rest arrives.
-            live.update(Text("" if fence_depth else pending))
+                fence_depth, fence_lines = _emit_line(
+                    line, fence_depth, fence_lines, highlight_code
+                )
+            # The in-flight tail is deliberately NOT markdown-rendered or
+            # highlighted: it is a partial line, so `**bo` has no closing marker
+            # yet and would render literally, then change under the reader as
+            # the rest arrives. It is shown inside a fence as well as outside —
+            # a half-written line of code is exactly what the reader wants to
+            # see while it is being written.
+            live.update(Text(pending, style="dim" if fence_depth else ""))
 
     # The stream can end mid-line; the Live region was transient, so that tail
     # has just been erased and has to be reprinted as permanent output.
     if pending:
-        fence_depth, fence_lines = _emit_line(pending, fence_depth, fence_lines, hide_code)
-    # An unterminated fence still owes the reader its placeholder.
-    if hide_code and fence_depth and fence_lines:
-        console.print(_code_placeholder(fence_lines))
+        fence_depth, fence_lines = _emit_line(pending, fence_depth, fence_lines, highlight_code)
     console.print(Rule(style=style))
     return "".join(buffer)
 
@@ -523,15 +552,15 @@ def prime_stream(tokens: Iterator[str]) -> Iterator[str]:
     return itertools.chain((first,), tokens)
 
 
-def show_code(code: str) -> None:
-    console.print(
-        Panel(
-            Syntax(code, "python", theme="monokai", line_numbers=True, word_wrap=True),
-            title="Generated Script",
-            border_style="magenta",
-            padding=(0, 1),
-        )
-    )
+# `show_code()` stood here and rendered the extracted block in a bordered
+# "Generated Script" panel after the reasoning had finished streaming. It is
+# gone because render_stream(highlight_code=True) now numbers and highlights
+# those same lines as they arrive, so the panel showed the reader nothing they
+# had not just watched appear — twice the vertical space for one listing.
+#
+# Restoring it means the code is on screen twice again. If a static, complete,
+# word-wrapped view is ever wanted back, it belongs behind an explicit choice
+# rather than on every turn.
 
 
 def show_exec_result(result: ExecResult) -> None:
@@ -727,9 +756,10 @@ def agentic_turn(
             title=f"Thought · attempt {attempt}",
             style="cyan",
             token_iter=thought_tokens,
-            # show_code() renders the extracted block below with syntax
-            # highlighting; without this the same lines print twice.
-            hide_code=True,
+            # The script is numbered and highlighted AS IT ARRIVES, which is
+            # why no Generated Script panel follows: the reader has already
+            # watched these lines being written.
+            highlight_code=True,
         )
         conv.assistant(thought)
 
@@ -738,7 +768,6 @@ def agentic_turn(
             status("💬", "LLaMA", "No code produced — returning direct answer.", "yellow")
             return
 
-        show_code(code)
         with processing("⚙️", "System", "Running generated Python code…", "yellow"):
             result = run_python(code)
 
