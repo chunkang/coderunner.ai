@@ -251,8 +251,8 @@ jobs:
         #
         # MIN_PASSED is a floor, not an equality: adding tests must not fail the
         # build. Raise it when the suite grows. 285 measured 2026-08-06 on
-        # Python 3.11.14 (SPEC-CI-001 AC-1) — 282 at authoring, plus three from
-        # the pulse-blanking fix.
+        # Python 3.11.14 (SPEC-CI-001 AC-1) — 282 at authoring, +3 from the
+        # pulse-blanking fix, +5 from the line-by-line stream render.
         #
         # This step is NOT a second coverage gate (N5) — it reads no coverage
         # figure and restates no floor. It counts tests.
@@ -263,7 +263,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 285
+          MIN_PASSED = 290
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

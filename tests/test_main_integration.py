@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ pytest.importorskip("ollama", reason="main.py needs ollama; run in-container")
 pytest.importorskip("httpx", reason="main.py needs httpx; run in-container")
 
 from rich.cells import cell_len
+from rich.console import Console
 
 import main
 import memory
@@ -757,3 +759,94 @@ def test_prime_stream_draws_exactly_one_token_eagerly() -> None:
     primed = main.prime_stream(source())
     assert drawn == ["a"]
     assert list(primed) == ["a", "b", "c"]
+
+
+# ------------------------------------------------------------------------------
+# Streaming render — completed lines are printed once and never repainted
+# ------------------------------------------------------------------------------
+#
+# render_stream() had NO tests before 2026-08-07, which is how it shipped an
+# implementation that re-rendered a growing Panel(Markdown(...)) on every token
+# at 24 fps. Nothing asserted how much it wrote, so nothing noticed that the
+# answer was "the whole document, once per token".
+
+
+def _captured_console(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
+    """Point main.console at a buffer that still believes it is a terminal.
+
+    force_terminal matters: without it Rich disables Live entirely and the test
+    would pass against an implementation that never animates at all.
+    """
+    buf = io.StringIO()
+    monkeypatch.setattr(main, "console", Console(file=buf, force_terminal=True, width=80))
+    return buf
+
+
+def _chunks(text: str, size: int = 3) -> Iterator[str]:
+    """Split into small pieces, the way a real token stream arrives."""
+    return iter([text[i : i + size] for i in range(0, len(text), size)])
+
+
+def test_render_stream_returns_the_stream_verbatim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _captured_console(monkeypatch)
+    reply = "Thought: plan it.\n```python\nprint(1)\n```\n"
+    assert main.render_stream("Thought", "cyan", _chunks(reply)) == reply
+
+
+def test_render_stream_writes_each_completed_line_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression guard. This is the flicker, expressed as an assertion.
+
+    A line that is written more than once has been REPAINTED, which is what the
+    Panel/Markdown implementation did to every line on every token. Counting
+    occurrences in the byte stream is the only way to catch that: the rendered
+    result looks correct either way, and only the terminal sees the difference.
+    """
+    buf = _captured_console(monkeypatch)
+    reply = "first line here\nsecond line here\nthird line here\n"
+    main.render_stream("Thought", "cyan", _chunks(reply))
+    raw = buf.getvalue()
+
+    # Every line but the last-in-flight one must appear exactly once.
+    assert raw.count("first line here") == 1
+    assert raw.count("second line here") == 1
+    assert raw.count("third line here") == 1
+
+
+def test_render_stream_prints_a_trailing_line_that_never_ended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Live region is transient, so an unterminated tail is erased on exit.
+
+    Without the explicit reprint the last line of any reply not ending in a
+    newline would vanish from the transcript entirely.
+    """
+    buf = _captured_console(monkeypatch)
+    result = main.render_stream("Thought", "cyan", _chunks("done\nno trailing newline"))
+    assert result == "done\nno trailing newline"
+    assert "no trailing newline" in buf.getvalue()
+
+
+def test_render_stream_handles_several_newlines_in_one_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama chunks on token boundaries, not line boundaries.
+
+    A single chunk can carry two newlines, so the split has to loop rather than
+    handle one per token.
+    """
+    buf = _captured_console(monkeypatch)
+    main.render_stream("Thought", "cyan", iter(["alpha\nbeta\ngamma\n"]))
+    raw = buf.getvalue()
+    for word in ("alpha", "beta", "gamma"):
+        assert raw.count(word) == 1
+
+
+def test_render_stream_tolerates_an_empty_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _captured_console(monkeypatch)
+    assert main.render_stream("Thought", "cyan", iter([])) == ""

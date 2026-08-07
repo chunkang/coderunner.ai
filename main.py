@@ -40,7 +40,6 @@ import ollama
 from rich.cells import cell_len
 from rich.console import Console, Group
 from rich.live import Live
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
@@ -192,20 +191,56 @@ def stream_llm(client: ollama.Client, messages: list[dict]) -> Iterator[str]:
             yield piece
 
 
+# Only the single in-flight line ever sits in the Live region below, so this
+# repaints one line rather than a document. The old value was 24 against a
+# whole growing panel.
+STREAM_REFRESH_PER_SEC = 12
+
+
 def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
+    """Print the model's reply one completed line at a time, never repainting it.
+
+    The predecessor wrapped a growing ``Panel(Markdown(...))`` in a ``Live`` and
+    called ``live.update()`` on EVERY token at 24 fps. Rich therefore re-rendered
+    the entire document — border, padding, markdown, syntax-highlighted fences —
+    and repainted a region that grew with the text. On a long reply containing a
+    code block that reads as continuous flicker, and it gets worse the more the
+    model says, which is exactly backwards.
+
+    Here a line is printed once, when its newline arrives, and is never touched
+    again. What remains in the Live region is only the tail that has not yet
+    ended in a newline — one line, so a repaint of it is invisible. Keeping that
+    tail live matters: without it a model emitting a whole paragraph before its
+    first newline would show nothing at all while producing it, which is the
+    "it is doing something but showing nothing" complaint in another costume.
+
+    **The cost is markdown rendering, and it is a real cost.** A fenced code
+    block cannot be rendered a line at a time — the fence is only meaningful as
+    a pair — so lines are printed verbatim. Little is lost in practice: the
+    extracted code is separately syntax-highlighted by ``show_code()``, and what
+    is left here is prose. Restoring markdown means restoring whole-document
+    re-rendering, and with it the flicker; do not do one without the other.
+    """
+    console.print(Rule(title, style=style, align="left"))
+
     buffer: list[str] = []
-    with Live(console=console, refresh_per_second=24, transient=False) as live:
+    pending = ""
+    with Live(Text(""), console=console, refresh_per_second=STREAM_REFRESH_PER_SEC,
+              transient=True) as live:
         for token in token_iter:
             buffer.append(token)
-            text = "".join(buffer)
-            live.update(
-                Panel(
-                    Markdown(text or "…"),
-                    title=title,
-                    border_style=style,
-                    padding=(1, 2),
-                )
-            )
+            pending += token
+            # A token can carry several newlines, or none.
+            while "\n" in pending:
+                line, pending = pending.split("\n", 1)
+                console.print(Text(line))
+            live.update(Text(pending))
+
+    # The stream can end mid-line; the Live region was transient, so that tail
+    # has just been erased and has to be reprinted as permanent output.
+    if pending:
+        console.print(Text(pending))
+    console.print(Rule(style=style))
     return "".join(buffer)
 
 
