@@ -276,6 +276,21 @@ jobs:
         #        AC-ONCE, AC-MASK, AC-FUTURE, and the /params REPL dispatch
         #   ---
         #   469
+        #   +22  SPEC-KEYCHAIN-001 tests/test_keychain.py
+        #   +30  SPEC-KEYCHAIN-001 tests/test_launcher_source.py — AC-TRANSPORT,
+        #        AC-BOOT, AC-LAUNCH, AC-DOCTOR and AC-EXPOSE's documentation
+        #        clause, all at source level: the launcher has no harness
+        #   +17  tests/test_main_integration.py — AC-POLICY and AC-SOURCE
+        #    +3  tests/test_source_seam.py — AC-IMAGE (2) plus keychain.py
+        #        joining FIRST_PARTY
+        #   ---
+        #   541
+        #
+        # MEASURED, NOT COMPUTED. The arithmetic above records where the number
+        # came from; the number itself was taken from the `tests` attribute of a
+        # real run's pytest-results.xml — the same file this step parses. A floor
+        # derived by adding an expected delta cannot see a test that stopped
+        # being COLLECTED, which is the whole thing this gate exists to catch.
         #
         # This step is NOT a second coverage gate (N5) — it reads no coverage
         # figure and restates no floor. It counts tests.
@@ -286,7 +301,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 469
+          MIN_PASSED = 541
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

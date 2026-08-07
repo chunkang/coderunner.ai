@@ -64,3 +64,15 @@ select = [
 #       wrong — it stays live on params.py, where the two exceptions carry their
 #       own inline `noqa` and their own reason.
 "tests/*" = ["S101", "S105"]
+
+# S603/S607: this file runs `bash -n coderunner` and one four-line fixed script,
+#            to check that the launcher parses and that its guarded empty-array
+#            expansion survives `set -u`. Both arguments are literals in this
+#            file; nothing user-supplied reaches either call. `bash` is spelled
+#            without a path DELIBERATELY — it is /bin/bash on macOS and can be
+#            /usr/bin/bash on Linux, and hard-coding either would make the check
+#            silently skip on the other platform, which for SPEC-KEYCHAIN-001's
+#            N8 is precisely the failure mode being guarded against.
+#            Scoped to this one file rather than to `tests/*`, so a future suite
+#            that shells out has to make its own case. SPEC-KEYCHAIN-001 T8.
+"tests/test_launcher_source.py" = ["S603", "S607"]

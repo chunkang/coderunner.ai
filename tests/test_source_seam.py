@@ -28,6 +28,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 #: The first-party product modules. `.claude/` and `.moai/` are agent tooling
 #: and are not product code; `conftest.py` and `tests/` are the harness.
 FIRST_PARTY = (
+    "keychain.py",
     "main.py",
     "memory.py",
     "params.py",
@@ -153,18 +154,90 @@ def test_no_first_party_module_imports_numpy(name: str) -> None:
     assert "numpy" not in imported_roots(parse(name))
 
 
-def test_params_and_settings_import_only_stdlib() -> None:
-    """SPEC-INPUT-001 spec.md 5.2: two more stdlib-only leaves, extending the
-    seam rather than departing from it.
+def test_params_and_settings_and_keychain_import_only_stdlib() -> None:
+    """SPEC-INPUT-001 spec.md 5.2, extended by SPEC-KEYCHAIN-001 spec.md 5: three
+    stdlib-only leaves, extending the seam rather than departing from it.
 
-    Both are gated at 100%, and neither has vectorstore.py's excuse for 85%:
-    with no external dependency there is no line in either that a test cannot
-    reach. The moment a third-party import lands here, that stops being true and
-    the floor becomes something to argue about rather than something to meet.
+    All three are gated at 100%, and none has vectorstore.py's excuse for 85%:
+    with no external dependency there is no line in any of them that a test
+    cannot reach. The moment a third-party import lands here, that stops being
+    true and the floor becomes something to argue about rather than something to
+    meet.
+
+    keychain.py's claim is the strongest of the three and the assertion is what
+    holds it: it may not import `params` either, which is why it duplicates the
+    `secret` token as a literal (keychain.py:SECRET_TYPE) with a cross-check in
+    tests/test_keychain.py. Reach for `import params` here and this fails.
     """
-    for name in ("params.py", "settings.py"):
+    for name in ("params.py", "settings.py", "keychain.py"):
         non_stdlib = imported_roots(parse(name)) - set(sys.stdlib_module_names)
         assert non_stdlib == set(), f"{name} must import stdlib only; found {sorted(non_stdlib)}"
+
+
+# ------------------------------------------------------------------------------
+# AC-IMAGE — every first-party module main.py imports is in the image
+# ------------------------------------------------------------------------------
+#
+# This criterion exists because the repository has already got this wrong.
+# `Dockerfile:34` shipped five modules for a whole SPEC while `main.py` imported
+# seven, and `import params` inside `coderunner-ai:latest` raised
+# ModuleNotFoundError. It went unnoticed because `coderunner:163` builds only
+# when the image is ABSENT, so editing source never triggers a rebuild and the
+# stale image kept importing an older `main.py` that needed neither module —
+# product.md 6.3's "stale-image hazard", concealing a second defect underneath
+# itself.
+#
+# The module list is derived from main.py's OWN IMPORT BLOCK rather than from a
+# hand-maintained second list, so the next module added to the application fails
+# this test instead of shipping missing. A second list would have to be updated
+# by exactly the person who just forgot to update the first one.
+
+
+def _dockerfile_copy_sources() -> list[str]:
+    """The file names on the Dockerfile `COPY … ./` line that ships the app."""
+    lines = (_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines()
+    copies = [line.split() for line in lines if line.startswith("COPY ") and "main.py" in line]
+    assert len(copies) == 1, "expected exactly one COPY line carrying main.py"
+    return copies[0][1:-1]  # drop the COPY keyword and the destination
+
+
+def _first_party_imports_of_main() -> set[str]:
+    """Every module main.py imports that exists as a .py file beside it."""
+    return {
+        f"{root}.py"
+        for root in imported_roots(parse("main.py"))
+        if (_ROOT / f"{root}.py").is_file()
+    }
+
+
+def test_the_image_copies_every_first_party_module_main_imports() -> None:
+    """AC-IMAGE, asserted at source level so it runs without a Docker daemon.
+
+    The other half of the criterion — a real `docker compose build` followed by
+    `import main` inside the resulting image — is a manual verification, because
+    the defect this replaces survived a whole SPEC of people READING this line
+    and finding it fine. This test is what stops a fourth occurrence; the build
+    is what proves the third one is over.
+    """
+    copied = set(_dockerfile_copy_sources())
+    required = _first_party_imports_of_main() | {"main.py"}
+
+    missing = sorted(required - copied)
+    assert missing == [], (
+        f"Dockerfile does not COPY {missing}; the built image's main.py will die "
+        "at import with a ModuleNotFoundError and no diagnostic beyond a traceback"
+    )
+
+
+def test_every_module_the_image_copies_still_exists_in_the_tree() -> None:
+    """The other direction, which costs one line and catches a rename.
+
+    A COPY naming a file that no longer exists fails the BUILD rather than the
+    run — loudly, but only for whoever builds next, which under coderunner:163's
+    build-if-absent rule can be months later.
+    """
+    for name in _dockerfile_copy_sources():
+        assert (_ROOT / name).is_file(), f"Dockerfile copies {name}, which is not in the tree"
 
 
 # ------------------------------------------------------------------------------

@@ -189,6 +189,11 @@ def fake_embedder() -> FakeEmbedClient:
 # looking healthy. If a floor here is ever lowered it should be by an amendment
 # saying which branch is going untested and why.
 #
+# SPEC-KEYCHAIN-001 adds keychain.py, and it has LESS excuse than either: it is a
+# dictionary reader with no external dependency, no subprocess and no platform
+# branch — every platform decision that feature makes is in bash. There is no
+# line in it a test cannot reach.
+#
 # EVERY ENTRY HERE NEEDS A MATCHING `--cov=` IN pytest.ini. With the entry alone,
 # `cov.report(include=[...])` raises and the `except` below fails the session
 # with "coverage unavailable" — loudly, which is the right direction.
@@ -203,6 +208,7 @@ PER_FILE_COVERAGE_TARGETS = {
     "vectorstore.py": PER_FILE_COVERAGE_FLOOR,
     "params.py": 100.0,
     "settings.py": 100.0,
+    "keychain.py": 100.0,
 }
 
 
