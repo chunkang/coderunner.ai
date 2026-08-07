@@ -1,0 +1,58 @@
+﻿{
+	"$schema": "https://raw.githubusercontent.com/getcursor/cursor/main/cursor.schema.json",
+	"commitMessage": {
+		"template": "{type}({file-no-ext}): {description}",
+		"types": [
+			"create",
+			"add",
+			"update",
+			"delete",
+			"remove",
+			"implement",
+			"refactor",
+			"docs",
+			"test",
+			"style",
+			"database",
+			"ci",
+			"perf",
+			"fix",
+			"chore",
+			"build",
+			"revert",
+			"merge"
+		],
+		"allowBullets": false,
+		"prefixBullet": "",
+		"colon": ":",
+		"subjectPatternError": "Subject must start with a valid action, scope in parentheses, colon, and contain no more than 10 words total. Scopes must be separated by commas. Use lowercase letters only. The commit message must be based on the new update or change.",
+		"maxWords": 10,
+		"scopeSeparator": ",",
+		"additionalTemplates": [
+			"{type}({file-no-ext}): {description}"
+		],
+		"descriptionPattern": "^[A-Za-z0-9 ,\\-()]+$",
+		"mergeRules": {
+			"feature/*": {
+				"template": "merge(feature): Merge feature branch {branch}",
+				"descriptionPattern": "^Merge feature branch [A-Za-z0-9\\-_/]+$"
+			},
+			"bugfix/*": {
+				"template": "merge(bugfix): Merge bugfix branch {branch}",
+				"descriptionPattern": "^Merge bugfix branch [A-Za-z0-9\\-_/]+$"
+			},
+			"hotfix/*": {
+				"template": "merge(hotfix): Merge hotfix branch {branch}",
+				"descriptionPattern": "^Merge hotfix branch [A-Za-z0-9\\-_/]+$"
+			},
+			"release/*": {
+				"template": "merge(release): Merge release branch {branch}",
+				"descriptionPattern": "^Merge release branch [A-Za-z0-9\\-_/]+$"
+			},
+			"*": {
+				"template": "merge: Merge branch {branch}",
+				"descriptionPattern": "^Merge branch [A-Za-z0-9\\-_/]+$"
+			}
+		}
+	}
+}
