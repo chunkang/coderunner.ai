@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Solution Memory — record model, vector maths, formatting
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Project : SPEC-MEMORY-001
 #  Purpose : Persist successful agentic turns and retrieve them semantically for
 #            reuse as few-shot prompt context. This module is the STDLIB-ONLY

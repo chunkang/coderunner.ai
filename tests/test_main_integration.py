@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,9 @@ import pytest
 pytest.importorskip("rich", reason="main.py needs rich; run in-container")
 pytest.importorskip("ollama", reason="main.py needs ollama; run in-container")
 pytest.importorskip("httpx", reason="main.py needs httpx; run in-container")
+
+from rich.cells import cell_len
+from rich.console import Console
 
 import main
 import memory
@@ -605,35 +609,105 @@ def test_the_memory_config_is_shared_not_re_read_per_turn() -> None:
 # ------------------------------------------------------------------------------
 
 
-def icon_style(line: Any) -> str:
-    """The style applied to the icon, which is the first span of a status line."""
-    return str(line.spans[0].style)
+# `icon_style()` used to live here, reading the style of a status line's first
+# span. It is deliberately gone: every assertion it served was an assertion that
+# a STYLE alternated, which is exactly the thing that turned out to prove
+# nothing against a colour emoji. Reintroducing it would make the same class of
+# test easy to write again.
 
 
-def test_pulsing_line_alternates_the_icon_between_bright_and_dim(
+# Every production call site passes a colour emoji, so every test here must
+# too. The original suite passed "*" — a TEXT glyph, for which bold and dim
+# work perfectly — and so asserted a mechanism that was inert in the only
+# context that ships. Using a real emoji is what makes these tests mean
+# anything; do not "simplify" it back to an ASCII placeholder.
+PULSE_ICON = "🔄"
+
+
+def test_pulsing_line_blinks_the_icon_on_and_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The pulse is derived from the clock, so __rich__ alone proves the beat."""
+    """The pulse is derived from the clock, so __rich__ alone proves the beat.
+
+    The assertion is on the GLYPH, not on a style. A colour emoji ignores SGR 1
+    and SGR 2 entirely, so an assertion that the icon's style alternates
+    bold/dim passes while the terminal shows a motionless line — which is
+    precisely what happened.
+    """
     clock = {"now": 0.0}
     monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
-    pulse = main._PulsingLine("*", "LLaMA", "thinking", "cyan")
+    pulse = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan")
 
     clock["now"] = 0.0
-    assert icon_style(pulse.__rich__()) == "bold"
+    assert PULSE_ICON in pulse.__rich__().plain
     clock["now"] = main.PULSE_HALF_PERIOD_SEC
-    assert icon_style(pulse.__rich__()) == "dim"
+    assert PULSE_ICON not in pulse.__rich__().plain
     clock["now"] = main.PULSE_HALF_PERIOD_SEC * 2
-    assert icon_style(pulse.__rich__()) == "bold"
+    assert PULSE_ICON in pulse.__rich__().plain
+
+
+def test_pulsing_line_never_animates_through_a_style_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two frames must differ in TEXT, not merely in styling.
+
+    This is the regression guard. Any future implementation that goes back to
+    varying an attribute on the icon — bold, dim, colour, blink — will render
+    identically on a colour emoji and must fail here rather than ship.
+    """
+    clock = {"now": 0.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    pulse = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan")
+
+    clock["now"] = 0.0
+    lit = pulse.__rich__()
+    clock["now"] = main.PULSE_HALF_PERIOD_SEC
+    dark = pulse.__rich__()
+
+    assert lit.plain != dark.plain
+
+
+def test_pulsing_line_holds_its_width_so_the_text_does_not_shift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A double-width emoji blanked to ONE space would jitter the line leftwards.
+
+    The blank is cell_len(icon) spaces for that reason, and cell_len is what
+    the terminal actually measures — `len("🔄")` is 1 while it occupies 2
+    columns, so a naive len() would still jitter.
+    """
+    clock = {"now": 0.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    pulse = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan")
+
+    clock["now"] = 0.0
+    lit = pulse.__rich__()
+    clock["now"] = main.PULSE_HALF_PERIOD_SEC
+    dark = pulse.__rich__()
+
+    assert cell_len(lit.plain) == cell_len(dark.plain)
+    # And the guard is only meaningful because the two differ in code points:
+    assert len(lit.plain) != len(dark.plain) or cell_len(PULSE_ICON) == 1
 
 
 def test_pulsing_line_carries_the_same_text_as_a_settled_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Only the icon's brightness differs; the wording must not shift mid-pulse."""
+    """The lit frame and the settled line must be identical; wording cannot shift."""
     monkeypatch.setattr(main.time, "monotonic", lambda: 0.0)
-    pulsing = main._PulsingLine("*", "LLaMA", "thinking", "cyan").__rich__()
-    settled = main._status_line("*", "LLaMA", "thinking", "cyan")
+    pulsing = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan").__rich__()
+    settled = main._status_line(PULSE_ICON, "LLaMA", "thinking", "cyan")
     assert pulsing.plain == settled.plain
+
+
+def test_every_pulsed_icon_in_main_is_wider_than_zero_cells() -> None:
+    """Guards the blanking arithmetic against an icon cell_len cannot measure.
+
+    If an icon ever measures 0 columns the dark frame would be a zero-length
+    blank and the line would jitter, silently, exactly as before.
+    """
+    for icon in ("🔄", "🧠", "⚙️", "💬", "📊"):
+        assert cell_len(icon) > 0
 
 
 def test_processing_settles_into_one_permanent_line(status_lines: list[dict]) -> None:
@@ -685,3 +759,94 @@ def test_prime_stream_draws_exactly_one_token_eagerly() -> None:
     primed = main.prime_stream(source())
     assert drawn == ["a"]
     assert list(primed) == ["a", "b", "c"]
+
+
+# ------------------------------------------------------------------------------
+# Streaming render — completed lines are printed once and never repainted
+# ------------------------------------------------------------------------------
+#
+# render_stream() had NO tests before 2026-08-07, which is how it shipped an
+# implementation that re-rendered a growing Panel(Markdown(...)) on every token
+# at 24 fps. Nothing asserted how much it wrote, so nothing noticed that the
+# answer was "the whole document, once per token".
+
+
+def _captured_console(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
+    """Point main.console at a buffer that still believes it is a terminal.
+
+    force_terminal matters: without it Rich disables Live entirely and the test
+    would pass against an implementation that never animates at all.
+    """
+    buf = io.StringIO()
+    monkeypatch.setattr(main, "console", Console(file=buf, force_terminal=True, width=80))
+    return buf
+
+
+def _chunks(text: str, size: int = 3) -> Iterator[str]:
+    """Split into small pieces, the way a real token stream arrives."""
+    return iter([text[i : i + size] for i in range(0, len(text), size)])
+
+
+def test_render_stream_returns_the_stream_verbatim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _captured_console(monkeypatch)
+    reply = "Thought: plan it.\n```python\nprint(1)\n```\n"
+    assert main.render_stream("Thought", "cyan", _chunks(reply)) == reply
+
+
+def test_render_stream_writes_each_completed_line_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression guard. This is the flicker, expressed as an assertion.
+
+    A line that is written more than once has been REPAINTED, which is what the
+    Panel/Markdown implementation did to every line on every token. Counting
+    occurrences in the byte stream is the only way to catch that: the rendered
+    result looks correct either way, and only the terminal sees the difference.
+    """
+    buf = _captured_console(monkeypatch)
+    reply = "first line here\nsecond line here\nthird line here\n"
+    main.render_stream("Thought", "cyan", _chunks(reply))
+    raw = buf.getvalue()
+
+    # Every line but the last-in-flight one must appear exactly once.
+    assert raw.count("first line here") == 1
+    assert raw.count("second line here") == 1
+    assert raw.count("third line here") == 1
+
+
+def test_render_stream_prints_a_trailing_line_that_never_ended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Live region is transient, so an unterminated tail is erased on exit.
+
+    Without the explicit reprint the last line of any reply not ending in a
+    newline would vanish from the transcript entirely.
+    """
+    buf = _captured_console(monkeypatch)
+    result = main.render_stream("Thought", "cyan", _chunks("done\nno trailing newline"))
+    assert result == "done\nno trailing newline"
+    assert "no trailing newline" in buf.getvalue()
+
+
+def test_render_stream_handles_several_newlines_in_one_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama chunks on token boundaries, not line boundaries.
+
+    A single chunk can carry two newlines, so the split has to loop rather than
+    handle one per token.
+    """
+    buf = _captured_console(monkeypatch)
+    main.render_stream("Thought", "cyan", iter(["alpha\nbeta\ngamma\n"]))
+    raw = buf.getvalue()
+    for word in ("alpha", "beta", "gamma"):
+        assert raw.count(word) == 1
+
+
+def test_render_stream_tolerates_an_empty_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _captured_console(monkeypatch)
+    assert main.render_stream("Thought", "cyan", iter([])) == ""

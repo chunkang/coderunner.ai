@@ -2,7 +2,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Launcher Script
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Purpose : Bootstrap Docker (install + start, silently) if missing, then build
 #            and run the CodeRunner container ephemerally. Zero footprint on
 #            the host once the session ends.

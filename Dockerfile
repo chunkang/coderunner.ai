@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Container Image
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Base    : python:3.11-slim
 #  Purpose : Ephemeral container for the terminal Code Interpreter chatbot.
 # ==============================================================================

@@ -1,7 +1,7 @@
 # ==============================================================================
 #  CodeRunner.AI  ::  Solution Memory — embedding seam and turn orchestration
 # ------------------------------------------------------------------------------
-#  Author  : kurapa <kurapa@kurapa.com>
+#  Author  : Chun Kang <ck@strpy.com>
 #  Project : SPEC-MEMORY-001
 #  Purpose : The single place that touches the embedding backend, plus the
 #            per-turn retrieve/capture orchestration built on memory.py.

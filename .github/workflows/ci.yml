@@ -1,0 +1,440 @@
+# ==============================================================================
+#  CodeRunner.AI  ::  Continuous integration  (SPEC-CI-001, tasks T1/T2/T4/T6)
+# ------------------------------------------------------------------------------
+#  Author  : Chun Kang <ck@strpy.com>
+#  Purpose : Execute the gates this repository already owns — the test
+#            suite, the per-file coverage gate at conftest.py:195-225, and
+#            `ruff check .` — and add the one it did not have: proof that the
+#            container image carries the source that is in the tree.
+#
+#  This workflow WIRES UP gates. It defines none. No threshold, count or floor
+#  is restated below, and that is a requirement (SPEC-CI-001 N5), not a matter
+#  of taste: the coverage floors live at conftest.py:187-192 and are enforced by
+#  the `pytest_sessionfinish` hook, so this file's entire relationship with
+#  coverage is running `pytest` and honouring its exit status. A second copy in
+#  YAML would be the copy that drifts, because it is the copy nobody re-reads.
+#
+#  TWO JOBS, DELIBERATELY UNCOUPLED. `test` answers "does the code work"; `image`
+#  answers "does it build, import, and match the tree". Neither answers the
+#  other's question, so neither `needs:` the other — they run in parallel and
+#  report separate verdicts. Making `image` wait on `test` would buy nothing and
+#  cost the wall-clock of the slower job.
+#
+#  WHAT THIS FILE MUST NEVER DO (SPEC-CI-001 N2): invoke `./coderunner`,
+#  `./coderunner --doctor`, `docker compose up`, or pull a model. `--doctor` sits
+#  AFTER the entire bootstrap (product.md 6.4); on a clean runner it would
+#  install Docker, start the daemon, build the image, start the Ollama sidecar
+#  and pull a multi-GB model before printing one diagnostic line.
+#
+#  WHERE THE RUFF PIN LIVES, AND WHY IT IS NOT HERE (T1). `ruff==0.16.1` is in
+#  requirements-dev.txt, not in a `pip install ruff==0.16.1` step below. The
+#  alternative was considered and rejected; do not assume it was overlooked.
+#  Cost of the choice made: a lint-only tool sits in a file whose own header
+#  says it is for `pytest`. Benefit: the linter a developer runs locally is the
+#  same build as the one that gates the merge, by construction, and the version
+#  appears exactly once. The rejected alternative keeps the dev file about
+#  testing at the price of letting the local and CI linters differ silently —
+#  which is the failure this pin exists to prevent, relocated rather than fixed.
+#
+#  STATUS. Until branch protection makes `test` and `image` required checks
+#  (SPEC-CI-001 T10, a repository setting no commit can deliver), a red run here
+#  blocks nothing. These checks are ADVISORY.
+# ==============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Manual re-run, for confirming a fix without an empty commit.
+  workflow_dispatch:
+
+# Nothing in this workflow writes to the repository: no push, no tag, no
+# release, no registry credential, no secret. Read is all it needs and all it
+# gets (SPEC-CI-001 U3, N4). The `type=gha` build cache in the `image` job
+# authenticates with the runner's own ACTIONS_RUNTIME_TOKEN, which is not part
+# of this scope, so caching does not force this open.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # READ THIS BEFORE SIMPLIFYING IT TO `true`.
+  #
+  # The expression is the entire point (SPEC-CI-001 E6, AC-6). Superseding a run
+  # on a pull-request branch is free — the older commit is a draft nobody will
+  # bisect. Superseding a run on `main` DESTROYS EVIDENCE: push three commits in
+  # one `git push` with a literal `true` here and two of them silently end up
+  # with no verdict at all, so the day a bisect needs per-commit signal it finds
+  # a single result attributed to the tip.
+  #
+  # The two failure modes are invisible until that day, and they look identical
+  # in the Actions UI. `true` looks correct on every PR it ever runs on.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ============================================================================
+  #  test — the suite, the coverage gate, and the linter, on a bare host
+  # ============================================================================
+  #
+  #  This runs on the HOST, not in the container, and that reverses what
+  #  pytest.ini:6-14 documents as the supported invocation. The reversal is
+  #  measured, not assumed (SPEC-CI-001 F1): installing both requirements files
+  #  on a bare 3.11 host yielded 282 passed / 0 skipped at authoring (285 today), with vectorstore.py's
+  #  suite running against a REAL embedded Milvus Lite on tmp_path. The image
+  #  buys no coverage the host does not already produce, and would cost three
+  #  accommodations for the uid-1000 mismatch (see the `image` job).
+  #
+  #  FIRST EXECUTION ON x86_64. Every measurement in this project's history was
+  #  taken on aarch64; `ubuntu-latest` is x86_64. If something fails here, it is
+  #  a portability finding produced by the mechanism built to produce it — not a
+  #  reason to add an xfail, relax a tolerance, or pin the runner to arm.
+  test:
+    name: test (python 3.11)
+    runs-on: ubuntu-latest
+
+    env:
+      # milvus-lite talks gRPC over loopback and the gRPC C-core logs straight
+      # to stderr from C++ — BENEATH Python's logging module, so nothing in
+      # vectorstore.py can suppress it. Same two variables as Dockerfile:22-23,
+      # for the same reason, so the host job's log stays readable
+      # (SPEC-CI-001 O4).
+      GRPC_VERBOSITY: NONE
+      GLOG_minloglevel: "3"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          # 3.11 exactly, and no matrix. Dockerfile:9 pins python:3.11-slim and
+          # ruff.toml:10 targets py311; a CI interpreter that differs from the
+          # shipped one tests a product nobody runs, and a matrix would assert
+          # support this project does not claim (SPEC-CI-001 U1, scope OUT 6).
+          python-version: "3.11"
+          cache: pip
+          # BOTH files, explicitly. The default pip cache key for this action
+          # globs `**/requirements.txt`, which matches requirements.txt and NOT
+          # requirements-dev.txt — so a change to the dev file alone would
+          # restore a stale cache. SPEC-CI-001 S1 requires either file to
+          # invalidate it.
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install runtime AND test dependencies
+        # BOTH FILES. This is the single most load-bearing line in the file.
+        #
+        # Installing requirements-dev.txt alone yields 242 passed, 1 skipped —
+        # AND STILL EXITS 0 (measured 2026-08-05). The skip is
+        # tests/test_main_integration.py:25-27, which guards on `rich`; `rich`
+        # is requirements.txt:1, a RUNTIME dependency the dev file deliberately
+        # does not carry (see its header). The broken job is green, its coverage
+        # gate passes, it prints "Per-file coverage gate passed", and it has not
+        # touched main.py's integration surface at all. In the Actions UI the
+        # two are the same green tick.
+        #
+        # Reproduce locally with exactly this command (SPEC-CI-001 U4):
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Preflight — assert the five imports the suite silently assumes
+        # THIS IS NOT REDUNDANT WITH THE INSTALL STEP ABOVE, and the ordering is
+        # load-bearing (SPEC-CI-001 E3, AC-3).
+        #
+        # `pip install` succeeding tells you the resolver was satisfied. It does
+        # not tell you the right set was requested, and it does not survive a
+        # dropped platform wheel. The suite's response to a missing package is
+        # not a failure but a SKIP — conftest.py:153,
+        # tests/test_vectorstore.py:22 and tests/test_main_integration.py:25-27
+        # all use `importorskip`. Those guards are a safety net for a platform
+        # with no wheel; requirements-dev.txt:22-26 states outright that they
+        # are NOT a licence to skip the gate in CI. This step is that sentence
+        # made executable: it asserts the POST-condition, and it runs BEFORE
+        # pytest, because the same assertion placed after the suite would report
+        # the missing package only once the suite had finished skipping around
+        # it. That is a log message, not a gate.
+        run: |
+          python - <<'PY'
+          import importlib
+          import sys
+
+          REQUIRED = ["rich", "ollama", "httpx", "pymilvus", "milvus_lite"]
+
+          missing = []
+          for name in REQUIRED:
+              try:
+                  importlib.import_module(name)
+              except ImportError as err:
+                  missing.append(f"{name} ({err})")
+              else:
+                  print(f"ok       {name}")
+
+          if missing:
+              print("", file=sys.stderr)
+              print("PREFLIGHT FAILED - the test suite would SKIP around these, "
+                    "not fail on them:", file=sys.stderr)
+              for item in missing:
+                  print(f"  - {item}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"preflight ok - all {len(REQUIRED)} imports resolved")
+          PY
+
+      - name: Lint
+        # `ruff check .` ONLY. `ruff format` and `ruff format --check` MUST NOT
+        # appear in this file (SPEC-CI-001 N1). The absence is the requirement,
+        # not an omission: the formatter currently reports 8 files would be
+        # reformatted, so adding it would fail the pipeline on day one and force
+        # a formatting decision this project has DELIBERATELY DECLINED — through
+        # a change that is nominally about CI.
+        #
+        # The baseline is zero findings (2026-08-05, ruff 0.16.1), so any
+        # finding here is a regression, not a backlog item (S4).
+        run: ruff check .
+
+      - name: Test suite and per-file coverage gate
+        # No arguments, no `-k`, no `--cov-fail-under`. Everything is in
+        # pytest.ini and conftest.py. The gate that matters is per-file
+        # (conftest.py:187-225) and cannot be expressed as a combined
+        # `--cov-fail-under` at all: a combined total lets a high figure on a
+        # large module mask a low one on a small module. Look for the literal
+        # line "Per-file coverage gate passed" (conftest.py:225) in this log.
+        #
+        # The floors themselves are at conftest.py:187-192 and are deliberately
+        # not repeated here, in any form, including in this comment (N5). Two
+        # copies of a threshold do not agree for long, and the copy in YAML is
+        # the one nobody re-reads.
+        #
+        # `--junitxml` is the ONLY addition, and it changes nothing about what
+        # pytest runs — it writes a machine-readable record of what it ran, so
+        # that the next step can assert on it. See that step for why.
+        #
+        # It lands in RUNNER_TEMP, not the workspace, for the same reason the
+        # hash files below use mktemp: a human reproducing this command should
+        # not be left with an untracked artefact the repository does not ignore.
+        # The `:-.` fallback is for that human — on a runner, RUNNER_TEMP is
+        # always set.
+        run: python -m pytest --junitxml="${RUNNER_TEMP:-.}/pytest-results.xml"
+
+      - name: Assert the pass count and the skip count
+        # THIS is AC-1, and it is the reason this job exists in the form it does.
+        #
+        # Exit status alone CANNOT distinguish the working pipeline from the
+        # broken one. A job that installs only requirements-dev.txt — omitting
+        # requirements.txt, and therefore `rich` (requirements.txt:1) — also
+        # exits 0. It also prints "Per-file coverage gate passed". It also
+        # satisfies pytest.ini's combined --cov-fail-under. It differs in
+        # exactly one respect: the 40 tests in tests/test_main_integration.py,
+        # the only coverage main.py has ever had, never ran. They were skipped,
+        # and a skip is green.
+        #
+        #     broken:  242 passed, 1 skipped   -> exit 0
+        #     working: 285 passed, 0 skipped   -> exit 0
+        #
+        # So the assertion is on the COUNTS, not the exit status (AC-1).
+        #
+        # Both directions are checked, and they catch different faults:
+        #   skipped != 0   catches a dependency that silently vanished, which
+        #                  importorskip converts into a green run. The preflight
+        #                  above covers today's five skip sites, but it is a
+        #                  proxy: the first skipif anyone adds escapes it. This
+        #                  does not.
+        #   passed < MIN   catches tests that stopped being COLLECTED — a
+        #                  renamed file, a changed testpaths, a decorator that
+        #                  quietly drops parametrisations. No skip is recorded
+        #                  for a test that was never found, so the skip check
+        #                  alone would report nothing.
+        #
+        # MIN_PASSED is a floor, not an equality: adding tests must not fail the
+        # build. Raise it when the suite grows. 285 measured 2026-08-06 on
+        # Python 3.11.14 (SPEC-CI-001 AC-1) — 282 at authoring, +3 from the
+        # pulse-blanking fix, +5 from the line-by-line stream render.
+        #
+        # This step is NOT a second coverage gate (N5) — it reads no coverage
+        # figure and restates no floor. It counts tests.
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+
+          MIN_PASSED = 290
+
+          path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
+          if not os.path.exists(path):
+              sys.exit(f"FAIL {path} does not exist — pytest did not run at all.")
+
+          root = ET.parse(path).getroot()
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          if suite is None:
+              sys.exit(f"FAIL no <testsuite> in {path} — did pytest run?")
+
+          total = int(suite.get("tests", 0))
+          skipped = int(suite.get("skipped", 0))
+          failures = int(suite.get("failures", 0))
+          errors = int(suite.get("errors", 0))
+          passed = total - skipped - failures - errors
+
+          print(f"collected={total} passed={passed} skipped={skipped} "
+                f"failures={failures} errors={errors}")
+
+          problems = []
+          if skipped:
+              problems.append(
+                  f"{skipped} test(s) SKIPPED, expected 0. A skip is green and "
+                  f"hides a missing dependency (SPEC-CI-001 N3)."
+              )
+          if passed < MIN_PASSED:
+              problems.append(
+                  f"only {passed} test(s) passed, expected at least {MIN_PASSED}. "
+                  f"Tests stopped being collected."
+              )
+
+          if problems:
+              for line in problems:
+                  print(f"FAIL {line}", file=sys.stderr)
+              sys.exit(1)
+          print(f"OK {passed} passed, 0 skipped (floor {MIN_PASSED})")
+          PY
+
+  # ============================================================================
+  #  image — does it build, does it import, and is it the tree
+  # ============================================================================
+  #
+  #  NO `paths:` FILTER, deliberately. A path-filtered required check reports
+  #  success on runs where it never executed, which makes a green merge button
+  #  a claim nobody made.
+  #
+  #  NO PYTEST IN HERE (SPEC-CI-001 N6). F1 makes an in-container run redundant,
+  #  and it is not free: Dockerfile:42-46 runs the image as uid/gid 1000 while
+  #  the runner's checkout belongs to a different uid, so a bind-mounted pytest
+  #  would need `--user`, a writable HOME for `pip install --user`, and
+  #  COVERAGE_FILE=/tmp/.coverage — three accommodations for zero additional
+  #  coverage. The workspace is not mounted into the container at all.
+  image:
+    name: image (build, import smoke, source integrity)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        # Required for the `type=gha` cache exporter: the default `docker`
+        # driver does not support cache backends.
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build coderunner-ai:latest
+        # WHY buildx DIRECTLY AND NOT `docker compose build coderunner`.
+        #
+        # SPEC-CI-001 3.2 names the compose command and O1 asks for a `type=gha`
+        # layer cache. Those two do not compose: `docker compose build` has no
+        # command-line flag for a cache backend, so the only way to give it one
+        # is a `cache_from:`/`cache_to:` stanza inside docker-compose.yml — and
+        # this SPEC permits exactly one file outside .github/ to be edited
+        # (requirements-dev.txt). Driving buildx directly is what buys the
+        # cache without touching a file this change may not touch.
+        #
+        # The three settings below are docker-compose.yml:58-62 transcribed:
+        # context `.`, dockerfile `Dockerfile`, tag `coderunner-ai:latest`. THAT
+        # TRANSCRIPTION IS THE COST, and it is a real one — if that compose
+        # build stanza ever gains a `target:`, a `args:` or a second tag, this
+        # step goes on building something else and goes on passing. Anyone
+        # editing the build block in docker-compose.yml must edit this step too.
+        #
+        # Human-reproducible equivalent, which is also what compose runs today
+        # minus the cache (U4):
+        #   docker buildx build --load -t coderunner-ai:latest .
+        #
+        # Dockerfile:31-32 installs requirements BEFORE Dockerfile:34 copies the
+        # source, so a warm build should re-run only the copy. That is an
+        # inference from layer order, not a measurement — T5 measures cold and
+        # warm as SEPARATE numbers, and if cold exceeds roughly five minutes the
+        # correct response is to demote this job to `push: [main]` plus
+        # `workflow_dispatch` (plan.md R1), not to weaken it.
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: coderunner-ai:latest
+          # `load` puts the result in the local daemon so the two verification
+          # steps below can run it. `push` is false and stays false (N4).
+          load: true
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Import smoke inside the image
+        # Exercises the real python:3.11-slim base (Dockerfile:9) with the real
+        # installed dependency set — the thing the host `test` job cannot check.
+        # `--entrypoint python` overrides ENTRYPOINT ["python", "-u", "main.py"]
+        # (Dockerfile:48); importing main.py is safe because its REPL is behind
+        # the `__main__` guard at main.py:802.
+        #
+        # This step ALONE is not sufficient, and the next step is why.
+        run: |
+          docker run --rm --entrypoint python coderunner-ai:latest \
+            -c "import main, memory, recall, vectorstore, tools; print('import smoke ok')"
+
+      - name: Source integrity — the image must carry the checked-out tree
+        # WHY A BUILD PLUS AN IMPORT SMOKE IS NOT ENOUGH.
+        #
+        # A stale image builds fine and imports perfectly well. Only this
+        # comparison can tell the two apart, and the hazard is not hypothetical:
+        # measured 2026-08-05, ALL FIVE source files in the local
+        # coderunner-ai:latest differed from the working tree. Not one drifted
+        # file — the entire copied set. The image dated from 2026-08-04, and
+        # `coderunner:163` rebuilds only when `docker image inspect` FAILS, i.e.
+        # only when the image is ABSENT, so the divergence can never
+        # self-correct: the launcher keeps running last week's code indefinitely
+        # (product.md 6.3, as present tense rather than as a documented hazard).
+        #
+        # A build-only job would have passed against that image. This is the
+        # step that makes the criterion able to fail (SPEC-CI-001 E4, AC-2).
+        #
+        # The file list is exactly the set at Dockerfile:34. If that COPY line
+        # changes, change this list — a file added there and not here is a file
+        # that can go stale unobserved.
+        run: |
+          set -eu
+
+          FILES="main.py tools.py memory.py recall.py vectorstore.py"
+
+          # Scratch files go to a temp dir, not the working tree. On the runner
+          # this is cosmetic; for the human running this step by hand against a
+          # clean checkout (U4) it is the difference between a verification and
+          # two untracked files that .gitignore does not cover.
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+
+          docker run --rm --entrypoint sh coderunner-ai:latest \
+            -c "cd /app && sha256sum $FILES" > "$work/image.sha256"
+          sha256sum $FILES > "$work/tree.sha256"
+
+          status=0
+          for f in $FILES; do
+            in_image=$(awk -v f="$f" '$2 == f { print $1 }' "$work/image.sha256" || true)
+            in_tree=$(awk -v f="$f" '$2 == f { print $1 }' "$work/tree.sha256" || true)
+
+            if [ -z "$in_image" ]; then
+              echo "MISSING  $f is absent from /app in the image"
+              status=1
+            elif [ "$in_image" = "$in_tree" ]; then
+              echo "ok       $f  $in_tree"
+            else
+              echo "STALE    $f  image=$in_image  tree=$in_tree"
+              status=1
+            fi
+          done
+
+          if [ "$status" -ne 0 ]; then
+            echo ""
+            echo "The image does not carry the source in this checkout."
+            echo "It built and it imported; neither of those could have caught this."
+          fi
+          exit "$status"
