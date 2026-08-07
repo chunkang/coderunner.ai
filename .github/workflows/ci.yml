@@ -402,7 +402,7 @@ jobs:
         # This step ALONE is not sufficient, and the next step is why.
         run: |
           docker run --rm --entrypoint python coderunner-ai:latest \
-            -c "import main, memory, recall, vectorstore, tools; print('import smoke ok')"
+            -c "import main, memory, recall, vectorstore, tools, params, settings; print('import smoke ok')"
 
       - name: Source integrity — the image must carry the checked-out tree
         # WHY A BUILD PLUS AN IMPORT SMOKE IS NOT ENOUGH.
@@ -426,7 +426,11 @@ jobs:
         run: |
           set -eu
 
-          FILES="main.py tools.py memory.py recall.py vectorstore.py"
+          # MUST match Dockerfile:34 exactly. A module added to main.py's
+          # imports but not to that COPY line produces an image that cannot
+          # import main at all — which happened with params.py and settings.py
+          # and was concealed only because the local image was stale.
+          FILES="main.py tools.py memory.py recall.py vectorstore.py params.py settings.py"
 
           # Scratch files go to a temp dir, not the working tree. On the runner
           # this is cosmetic; for the human running this step by hand against a

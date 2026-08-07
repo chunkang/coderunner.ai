@@ -31,7 +31,7 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-COPY main.py tools.py memory.py recall.py vectorstore.py ./
+COPY main.py tools.py memory.py recall.py vectorstore.py params.py settings.py ./
 
 # The `.coderunner` directory MUST exist in the image AND be owned by `runner`
 # BEFORE `USER runner`. Docker copies an image directory's ownership into an
