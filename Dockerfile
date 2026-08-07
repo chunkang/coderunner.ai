@@ -31,7 +31,16 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-COPY main.py tools.py memory.py recall.py vectorstore.py params.py settings.py ./
+# EVERY first-party module main.py imports must be on this line. A module that
+# is missing does not fail the build — it fails at IMPORT, inside a container
+# that exits immediately, showing the user a raw traceback. And it fails LATE:
+# coderunner:163 builds only when the image is ABSENT, so editing source never
+# triggers a rebuild and a stale image can conceal the fault for a whole SPEC.
+# That is not hypothetical — `params.py` and `settings.py` were missing from
+# this line for exactly that long. tests/test_source_seam.py derives the
+# required list from main.py's own import block, so the next module added to the
+# application fails a test instead of shipping missing.
+COPY main.py tools.py memory.py recall.py vectorstore.py params.py settings.py keychain.py ./
 
 # The `.coderunner` directory MUST exist in the image AND be owned by `runner`
 # BEFORE `USER runner`. Docker copies an image directory's ownership into an

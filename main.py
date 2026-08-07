@@ -46,6 +46,7 @@ from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
 
+import keychain
 import params
 import settings
 from memory import (
@@ -74,6 +75,23 @@ HISTORY_FILE = Path(os.environ.get("CODERUNNER_HISTORY", str(Path.home() / ".cod
 HISTORY_MAX = 1000
 
 TOOLS_MODULE = Path(__file__).with_name("tools.py")
+
+# ------------------------------------------------------------------------------
+# Host-keychain secrets (SPEC-KEYCHAIN-001)
+# ------------------------------------------------------------------------------
+# READ AT IMPORT, AND THE TIMING IS THE REQUIREMENT (E3). `run_python()` passes
+# no `env=` (main.py:496-503), so a child inherits whatever `os.environ` holds
+# when it starts; deferring this to first use would leave the value readable by
+# any script run earlier in the session with a one-line `print(os.environ)`.
+# `keychain.load()` POPS each variable as it reads it, which closes that route
+# for children (measured 2026-08-07) and closes NEITHER `/proc/self/environ` NOR
+# `/proc/1/environ` (measured). It is a mitigation with a stated ceiling, not a
+# fix — spec.md 4.1.
+#
+# The values arrive from the launcher, which fetched them from the host's own
+# credential store before the container existed. Nothing here knows that: this is
+# a dictionary, and every platform decision lives in bash (keychain.py's banner).
+SECRETS = keychain.load(os.environ)
 
 # ------------------------------------------------------------------------------
 # Solution memory configuration (SPEC-MEMORY-001)
@@ -851,19 +869,66 @@ def _collect_params(
     values: dict[str, object],
     session: settings.PolicySession,
 ) -> list[params.Declaration]:
-    """Prompt for whatever this attempt declared and does not already have.
+    """Source what the keychain has, prompt for the rest, return everything.
 
-    Returns the declarations newly collected here, so the caller can accumulate
-    them across attempts. Nothing is prompted twice in a turn (E4), and the
-    assembled prelude is never printed — for any value, secret or not (N2).
+    Returns the declarations newly collected here — SOURCED ONES INCLUDED — so
+    the caller can accumulate them across attempts. Nothing is prompted twice in
+    a turn (E4), and the assembled prelude is never printed, for any value,
+    secret or not (N2).
+
+    THREE THINGS HERE ARE LOAD-BEARING AND ALL THREE ARE INVISIBLE WHEN WRONG.
+
+    **(a) `_resolve_param_policy()` is unconditional on `pending` and MUST NOT
+    become conditional on `asked`** (S1, AC-POLICY). Before SPEC-KEYCHAIN-001 the
+    two were the same set, so the call could live inside the block that prompts
+    and nobody could tell. They are no longer the same set: a turn whose values
+    all came from the keychain prompts nothing and still holds a secret. Move
+    this line and the chain is:
+
+        param_session.policy stays None
+          -> main.py:981   reads the policy as ""
+          -> main.py:988   `policy == POLICY_SENSITIVE` is False -> no redaction
+          -> main.py:1026  `policy == POLICY_NEVER`     is False -> capture runs
+          -> _capture_turn() persists stdout containing the secret, in plaintext,
+             to coderunner_app_data, which tech.md 7.2 states any later generated
+             script can read
+
+    Nothing in it raises, warns or prints. The script runs, the panel is green,
+    the answer streams, the turn is captured as solved.
+
+    The cost is real and is accepted rather than designed around (R8): the
+    first-run capture-policy question can now fire on a turn where the user typed
+    nothing at all. That is correct — the policy governs capture, not prompting —
+    and it is surprising. Do not "fix" it by making resolution conditional again.
+
+    **(b) `pending` is returned, not `asked`.** main.py:974 accumulates the
+    return value into `param_declared`, which main.py:987 feeds to
+    `params.secret_values()` to build the redaction set. A sourced declaration
+    dropped from the return value is a secret redaction never sees.
+
+    **(c) The prefill goes THROUGH the collection seam, not around it.**
+    `keychain.prefill()` writes into `values`; `collect_values()`'s existing skip
+    (params.py:201-203) is then what suppresses the prompt. So `ask` is never
+    invoked for a sourced name, `_ask_param()` never runs, `getpass` never runs,
+    and no branch was added to a module gated at 100%. The absence of a call is
+    easier to verify than the presence of a guard.
     """
     pending = params.pending_declarations(declarations, values)
     if not pending:
         return pending
 
-    status("⚙️", "Params", params.announcement(pending), "cyan")
-    _resolve_param_policy(session)
-    params.collect_values(pending, _ask_param, values)
+    sourced = keychain.prefill(pending, values, SECRETS)
+    asked = params.pending_declarations(pending, values)
+
+    if asked:
+        status("⚙️", "Params", params.announcement(asked), "cyan")
+    _resolve_param_policy(session)  # UNCONDITIONAL — see (a) above
+    for name in sourced:
+        status("⚙️", "Params", PARAM_SOURCED_MSG.format(name=name), "cyan")
+    if asked:
+        params.collect_values(asked, _ask_param, values)
+    # E5: the masked confirmation is emitted for the whole of `pending`, so a
+    # sourced secret is exactly as visible in the transcript as a typed one.
     for line in params.confirmations(pending, values):
         status("⚙️", "Params", line, "cyan")
     return pending
@@ -872,6 +937,14 @@ def _collect_params(
 PARAMS_NOT_STORED_MSG = (
     "This turn used parameters — not stored, per the capture policy (/params)."
 )
+
+#: E5. One line per sourced parameter, naming it and its source, so a value the
+#: user was not asked for is still something they were told about. The launcher
+#: reports its own faults in its own output, before the banner; this is the only
+#: per-turn line the feature has, and it is emitted on the SUCCESS path only —
+#: a line on every parameterised turn is how a warning becomes furniture
+#: (spec.md 3.8).
+PARAM_SOURCED_MSG = "{name} supplied from the host keychain (not asked)."
 
 
 def agentic_turn(

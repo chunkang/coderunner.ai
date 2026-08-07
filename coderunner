@@ -33,6 +33,305 @@ silent() { "$@" >>"$LOG_FILE" 2>&1; }
 
 OS="$(uname -s)"
 
+# --- 0. host keychain (SPEC-KEYCHAIN-001) -------------------------------------
+# EVERY PLATFORM DECISION THIS FEATURE MAKES LIVES HERE, and none of it crosses
+# into Python. keychain.py reads a dictionary; it contains no subprocess, no
+# platform branch and no client name. That is the whole answer to the question
+# the SPEC started from — can private information be stored using only system
+# libraries, with no dependency — and the answer is yes precisely because the
+# launcher is not Python: calling /usr/bin/security costs zero lines in
+# requirements.txt, zero bytes in the image and zero entries in tech.md 2.
+#
+# READ THIS BEFORE CHANGING ANYTHING BELOW. Passing a value into the container's
+# environment does NOT make it private. Measured 2026-08-07:
+#   docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}'
+# prints it in plaintext, and /proc/1/environ inside the container carries it for
+# the same uid generated code runs as. This feature removes a retyping burden and
+# adds a reader — the Docker daemon. See spec.md 4.3, carried verbatim into
+# README.md and tech.md 7.2.
+
+KEYCHAIN_SERVICE="coderunner"
+KEYCHAIN_REGISTRY="__names__"
+KEYCHAIN_ENV_PREFIX="CODERUNNER_SECRET_"
+
+# "No such item" is a STATE, not a fault, and it has to be told apart from every
+# other non-zero exit or the launcher prints a warning at every user who has
+# never opted in. Measured 2026-08-07 on Darwin: a missing item is rc 44 with
+# `SecKeychainSearchCopyNext: The specified item could not be found in the
+# keychain.` on stderr; a LOCKED keychain is rc 128 with nothing at all.
+# secret-tool's rc 1 is reasoned, not measured — this host has no secret-tool.
+case "$OS" in
+  Darwin) KEYCHAIN_RC_ABSENT="44" ;;
+  *)      KEYCHAIN_RC_ABSENT="1"  ;;
+esac
+
+# O1. Launcher-only, in the pattern of BOOT_TIMEOUT and LOG_FILE above, and
+# deliberately absent from docker-compose.yml (N7): every variable there is
+# written `${VAR:-default}`, so anything added would be permanently set inside
+# the container. A launcher-only variable never reaches it and cannot spring that
+# trap.
+keychain_disabled() { [[ "${CODERUNNER_KEYCHAIN:-1}" == "0" ]]; }
+
+# Prints the client name, or nothing with rc 1. macOS and Linux only, which is
+# the launcher's pre-existing boundary (coderunner:92-96) rather than a new one.
+keychain_client() {
+  case "$OS" in
+    Darwin)
+      if command -v security    >/dev/null 2>&1; then printf 'security';    return 0; fi ;;
+    Linux)
+      if command -v secret-tool >/dev/null 2>&1; then printf 'secret-tool'; return 0; fi ;;
+  esac
+  return 1
+}
+
+# `${name^^}` would be one character shorter and is bash 4. /bin/bash on stock
+# macOS is 3.2.57, where it is a syntax error.
+keychain_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+
+# Reads one item. rc and stdout are BOTH part of the answer (U3): a name is
+# supplied only when this exits 0 and prints something.
+keychain_read() {
+  local account="$1"
+  case "$OS" in
+    Darwin) security find-generic-password -a "$account" -s "$KEYCHAIN_SERVICE" -w 2>/dev/null ;;
+    Linux)  secret-tool lookup service "$KEYCHAIN_SERVICE" name "$account" 2>/dev/null ;;
+    *)      return 1 ;;
+  esac
+}
+
+# The store path, and the launcher NEVER HANDLES THE PLAINTEXT ON IT.
+# `security add-generic-password -h`:
+#     Use of the -p or -w options is insecure. Specify -w as the last option to
+#     be prompted.
+# Given last and with no value, `security` prompts and masks the value itself, so
+# it never enters an argv, a shell variable or this process's environment.
+# `secret-tool store` reads stdin and has the same property. This is a free win
+# and the way to throw it away is to pass the value on the command line.
+keychain_store() {
+  local name="$1"
+  case "$OS" in
+    Darwin) security add-generic-password -U -a "$name" -s "$KEYCHAIN_SERVICE" -w ;;
+    Linux)  secret-tool store --label="CodeRunner $name" \
+              service "$KEYCHAIN_SERVICE" name "$name" ;;
+    *)      return 1 ;;
+  esac
+}
+
+keychain_delete() {
+  local name="$1"
+  case "$OS" in
+    Darwin) security delete-generic-password -a "$name" -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1 ;;
+    Linux)  secret-tool clear service "$KEYCHAIN_SERVICE" name "$name" >/dev/null 2>&1 ;;
+    *)      return 1 ;;
+  esac
+}
+
+# The registry (D4). It is an item in the keychain rather than a key in
+# settings.json for a measurable reason, not an aesthetic one: settings.json
+# lives at /home/runner/.coderunner/settings.json inside the coderunner_app_data
+# named volume, the launcher is on the host, and on macOS under Docker Desktop
+# that mountpoint is inside the VM and does not exist on the host at all — which
+# is why coderunner:248 prints it as a diagnostic rather than using it. Reading
+# it would mean starting a throwaway container BEFORE the bootstrap that
+# guarantees the image exists.
+#
+# The text is NAMES ONLY and never a value, but it goes through the same client
+# on the same code path, so it is piped rather than passed. Measured 2026-08-07:
+# `security` asks for the text TWICE, so a single-line pipe stores an EMPTY item
+# with rc 0 — our own write path manufacturing the U3 "exists but empty" case.
+# Fed twice: rc 0, and `sk-a$bc de#f "g" \h` round-tripped byte-identical.
+keychain_write_registry() {
+  local text="$1"
+  case "$OS" in
+    Darwin)
+      printf '%s\n%s\n' "$text" "$text" \
+        | security add-generic-password -U -a "$KEYCHAIN_REGISTRY" -s "$KEYCHAIN_SERVICE" -w \
+            >/dev/null 2>&1 ;;
+    Linux)
+      printf '%s\n' "$text" \
+        | secret-tool store --label="CodeRunner registered secret names" \
+            service "$KEYCHAIN_SERVICE" name "$KEYCHAIN_REGISTRY" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Space-separated, because declared names are [A-Za-z_][A-Za-z0-9_]* (params.py:75)
+# and so contain no whitespace — which makes `for n in $names` safe and means
+# there is no separator to parse, escape or get wrong.
+keychain_registry_names() {
+  keychain_read "$KEYCHAIN_REGISTRY"
+}
+
+keychain_names_without() {
+  local existing="$1" name="$2" out="" item
+  for item in $existing; do
+    if [[ "$item" != "$name" ]]; then
+      if [[ -n "$out" ]]; then out="$out $item"; else out="$item"; fi
+    fi
+  done
+  printf '%s' "$out"
+}
+
+keychain_names_with() {
+  local out
+  out="$(keychain_names_without "$1" "$2")"
+  if [[ -n "$out" ]]; then printf '%s %s' "$out" "$2"; else printf '%s' "$2"; fi
+}
+
+keychain_require_client() {
+  if keychain_disabled; then
+    die "CODERUNNER_KEYCHAIN=0 disables the host keychain for this invocation."
+  fi
+  if ! keychain_client >/dev/null 2>&1; then
+    case "$OS" in
+      Darwin) die "No 'security' command on PATH; this macOS install has no keychain client." ;;
+      Linux)  die "No 'secret-tool' on PATH. Install libsecret-tools (Debian/Ubuntu) or libsecret-devel (Fedora)." ;;
+      *)      die "Host keychain support is macOS and Linux only; this is $OS." ;;
+    esac
+  fi
+}
+
+keychain_require_name() {
+  local name="$1" flag="$2"
+  [[ -n "$name" ]] || die "Usage: ./coderunner $flag NAME"
+  [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+    || die "'$name' is not a usable parameter name; params.py:75 allows [A-Za-z_][A-Za-z0-9_]*."
+  [[ "$name" != "$KEYCHAIN_REGISTRY" ]] \
+    || die "'$KEYCHAIN_REGISTRY' is reserved for the name registry."
+}
+
+keychain_set_secret() {
+  local name="$1" upper existing names
+  keychain_require_name "$name" "--set-secret"
+  keychain_require_client
+  upper="$(keychain_upper "$name")"
+  names="$(keychain_registry_names)" || names=""
+
+  # O2. Two declared names differing only in case collide on one environment
+  # variable, and nothing inside the container can tell them apart — it would
+  # silently hand both declarations the same value. Refuse here, where the names
+  # are known, rather than letting the container pick a winner.
+  for existing in $names; do
+    if [[ "$existing" != "$name" && "$(keychain_upper "$existing")" == "$upper" ]]; then
+      die "'$name' and the registered '$existing' both map to ${KEYCHAIN_ENV_PREFIX}${upper}; pick one."
+    fi
+  done
+
+  keychain_store "$name" || die "Could not store '$name' (the keychain client exited non-zero)."
+  keychain_write_registry "$(keychain_names_with "$names" "$name")" \
+    || die "Stored '$name' but could not update the name registry."
+  ok "Stored '$name'. A '# @param $name: secret' declaration will be filled from the keychain."
+}
+
+keychain_forget_secret() {
+  local name="$1" names
+  keychain_require_name "$name" "--forget-secret"
+  keychain_require_client
+  names="$(keychain_registry_names)" || names=""
+  # Not fatal when the item is already gone: the point of the command is that the
+  # name stops being registered, and rc 44 means somebody got there first.
+  keychain_delete "$name" || true
+  keychain_write_registry "$(keychain_names_without "$names" "$name")" \
+    || die "Removed '$name' but could not update the name registry."
+  ok "Forgot '$name'. A '# @param $name: secret' declaration will prompt again."
+}
+
+keychain_list_secrets() {
+  local names count name
+  keychain_require_client
+  if ! names="$(keychain_registry_names)" || [[ -z "$names" ]]; then
+    ok "No secrets registered. Add one with: ./coderunner --set-secret NAME"
+    return 0
+  fi
+  count=0
+  for name in $names; do count=$(( count + 1 )); done
+  # N5: names and a count. Never a value — this is the output a user pastes.
+  ok "Registered secrets ($count): $(printf '%s' "$names" | tr ' ' ',')"
+}
+
+# Dispatched HERE — after $OS is known and before the bootstrap at line ~157 —
+# and the placement is the requirement, not a detail. product.md 6.4 records what
+# the other choice costs, in the project's own words: the --doctor branch sits
+# after the entire bootstrap, so running it on a clean machine installs Docker,
+# starts the daemon, builds the image, starts the Ollama sidecar and pulls a
+# multi-GB model before printing a single diagnostic line. Storing a password
+# must not install Docker. Each arm prints one line and EXITS — falling through
+# would reach coderunner:263, which forwards "$@" into a main.py that parses
+# nothing and discards it silently (N6).
+case "${1:-}" in
+  --set-secret)    keychain_set_secret    "${2:-}"; exit 0 ;;
+  --forget-secret) keychain_forget_secret "${2:-}"; exit 0 ;;
+  --list-secrets)  keychain_list_secrets;           exit 0 ;;
+esac
+
+# Fills RUN_ENV with `-e NAME` pairs, name only. Called from section 8, after the
+# bootstrap and before `compose run` (E1) — the opposite placement from the
+# subcommands above, and deliberate: the fetch needs the compose command, the
+# subcommands need nothing.
+#
+# U4: no fault here aborts anything. Every one of them degrades to the behaviour
+# that existed before this SPEC — the user is prompted — with at most one yellow
+# line, matching product.md:138.
+keychain_collect_env() {
+  local names name upper value rc
+
+  # O1: nothing fetched, nothing probed. Checked first so that disabling the
+  # feature does not touch the keychain at all.
+  if keychain_disabled; then
+    warn "Host keychain disabled (CODERUNNER_KEYCHAIN=0) — declared secrets will be prompted."
+    return 0
+  fi
+
+  if ! keychain_client >/dev/null 2>&1; then
+    warn "No host keychain client on PATH — declared secrets will be prompted."
+    return 0
+  fi
+
+  rc=0
+  names="$(keychain_registry_names)" || rc=$?
+  if (( rc != 0 )); then
+    # A missing registry is the state of every user who has never run
+    # --set-secret, which on the day this ships is everybody. NO LINE: one here
+    # would appear on every launch of every session forever, and the convention
+    # is one line per FAULT, not one per absence of an opt-in feature. Anything
+    # else — rc 128 for a locked keychain (measured), a cancelled consent dialog
+    # — is a fault and says so.
+    if (( rc != KEYCHAIN_RC_ABSENT )); then
+      warn "Host keychain unavailable (client exited $rc) — declared secrets will be prompted."
+    fi
+    return 0
+  fi
+
+  for name in $names; do
+    upper="$(keychain_upper "$name")"
+    # S5, per-name isolation: a loop that aborts on the first failure passes a
+    # one-name test and silently disables the feature for anyone with a stale
+    # registry entry. The registry is NOT repaired — pruning on a failed read
+    # would delete a registration because the keychain happened to be locked.
+    if ! value="$(keychain_read "$name")"; then
+      warn "Keychain: '$name' is registered but could not be read — it will be prompted."
+      continue
+    fi
+    if [[ -z "$value" ]]; then
+      warn "Keychain: '$name' holds an empty value — it will be prompted."
+      continue
+    fi
+    # The transport, chosen by measurement (spec.md 2.3) against the value
+    # `sk-a$bc de#f "g" \h`:
+    #   --env-from-file  -> `sk-a de#f "g" \h`  — $bc expanded away, 3 chars lost
+    #                       silently. A transport that corrupts a credential is
+    #                       not a transport (N3).
+    #   -e NAME=value    -> intact, and in `ps -Ao args` for the whole session,
+    #                       because coderunner:260-263 does not exec (N4).
+    #   -e NAME          -> intact, and absent from argv. Chosen.
+    # The value travels in this shell's exported environment, which compose
+    # reads. That is a real residual cost and it is stated: on Linux it is
+    # /proc/<pid>/environ, readable by the same uid and by root.
+    export "${KEYCHAIN_ENV_PREFIX}${upper}=$value"
+    RUN_ENV+=(-e "${KEYCHAIN_ENV_PREFIX}${upper}")
+  done
+}
+
 # --- 1. install Docker if missing (silent) ------------------------------------
 install_docker_macos() {
   say "Installing Docker Desktop silently (this may take a few minutes)…"
@@ -254,10 +553,64 @@ if [[ "${1:-}" == "--doctor" ]]; then
     printf '  embed model      : %s\n' 'disabled (CODERUNNER_MEMORY=0)'
   fi
   printf '  bootstrap log    : %s\n' "$LOG_FILE"
+
+  # SPEC-KEYCHAIN-001, and twelve fields become fourteen. NAMES ONLY, NEVER A
+  # VALUE (N5) — --doctor output is the single most likely piece of this
+  # program's output to be published verbatim by someone who has not read it
+  # first, and a value printed here lands in a public issue tracker.
+  #
+  # These two rows need no daemon, no image and no model, and they sit in a
+  # branch that runs after the whole bootstrap. That defect is inherited rather
+  # than introduced (product.md 6.4) and moving --doctor is scoped out — but the
+  # right eventual fix is now obvious: --doctor belongs beside the secret
+  # subcommands, with only the Docker-dependent rows needing the daemon.
+  if keychain_disabled; then
+    doctor_backend='disabled (CODERUNNER_KEYCHAIN=0)'
+    doctor_secrets='not probed'
+  elif ! doctor_client="$(keychain_client)"; then
+    doctor_backend='none'
+    doctor_secrets='none'
+  else
+    doctor_backend="$doctor_client ($(command -v "$doctor_client"))"
+    doctor_rc=0
+    doctor_names="$(keychain_registry_names)" || doctor_rc=$?
+    if (( doctor_rc == 0 )) && [[ -n "$doctor_names" ]]; then
+      doctor_count=0
+      for doctor_name in $doctor_names; do doctor_count=$(( doctor_count + 1 )); done
+      doctor_secrets="$(printf '%s' "$doctor_names" | tr ' ' ',') ($doctor_count)"
+    elif (( doctor_rc == 0 )) || (( doctor_rc == KEYCHAIN_RC_ABSENT )); then
+      doctor_secrets='none'
+    else
+      doctor_secrets='unavailable (keychain locked)'
+    fi
+  fi
+  printf '  keychain backend : %s\n' "$doctor_backend"
+  printf '  stored secrets   : %s\n' "$doctor_secrets"
   exit 0
 fi
 
 # --- 8. run ephemerally -------------------------------------------------------
 # No `exec` here: exec replaces this shell and would skip the EXIT trap above,
 # leaving the ollama sidecar running (holding RAM) after the app closes.
-"${COMPOSE[@]}" run --rm --name "$SERVICE_NAME" "$SERVICE_NAME" "$@"
+
+# Host-keychain secrets, fetched last so that a keychain fault costs a prompt and
+# never a session (SPEC-KEYCHAIN-001 E1).
+RUN_ENV=()
+keychain_collect_env
+
+# THE EXPANSION IS GUARDED AND THE GUARD IS NOT OPTIONAL (N8, AC-LAUNCH).
+# `coderunner:10` sets `set -Eeuo pipefail` and `coderunner:1` is
+# `#!/usr/bin/env bash`, which on a stock Mac resolves to /bin/bash 3.2.57.
+# Measured 2026-08-07:
+#
+#     $ /bin/bash -c 'set -Eeuo pipefail; A=(); printf "%s\n" "${A[@]}"'
+#     /bin/bash: A[@]: unbound variable
+#     rc=1
+#
+# A user with no stored secrets has an empty array on EVERY launch, so the
+# unguarded form breaks not users of this feature but everyone who has never
+# touched it. `${A[@]+"${A[@]}"}` was measured to work on 3.2.57, and the
+# asymmetry is what makes this dangerous: on Homebrew bash 5 — which is most
+# developer machines — both forms work, so the wrong one passes every check its
+# author runs and fails on the first clean Mac.
+"${COMPOSE[@]}" run --rm --name "$SERVICE_NAME" ${RUN_ENV[@]+"${RUN_ENV[@]}"} "$SERVICE_NAME" "$@"
