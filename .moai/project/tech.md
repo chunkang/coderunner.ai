@@ -110,7 +110,7 @@ lockfile, no hashes:
 
 | Package | Constraint | Actually used for | Where |
 | --- | --- | --- | --- |
-| `rich` | `>=13.7.0` | The entire terminal UI: `Console`, `Group`, `Live`, `Markdown`, `Panel`, `Rule`, `Syntax`, `Text` | `main.py:37-44`; console at `:97`; Live streaming at `:195`; Syntax panel at `:305`; status spinner at `:487` |
+| `rich` | `>=13.7.0` | The entire terminal UI: `Console`, `Group`, `Live`, `Panel`, `Rule`, `Syntax`, `Text`, plus `rich.cells.cell_len`. **`Markdown` is no longer imported** — the streaming renderer styles inline markdown itself, per line, because rendering a `Markdown` document requires re-rendering all of it on every token | `main.py:37-44`; console at `:97`; Live streaming at `:195`; Syntax panel at `:305`; status spinner at `:487` |
 | `ollama` | `>=0.3.0` | LLM transport. `Client(host=...)` construction, `client.chat(stream=True)`, `client.list()` preflight, `ollama.ResponseError` handling | `main.py:36`, `:186`, `:550`, `:575`, `:580`, `:657` |
 | `httpx` | `>=0.27.0` | **Exception types only.** `ConnectError`, `ConnectTimeout`, `ReadTimeout` in `preflight()`; `ConnectError`, `ReadError`, `RemoteProtocolError` in `repl()`. No `httpx` request is ever issued by application code — it is present because the `ollama` client uses it as its transport | `main.py:35`, `:577`, `:659` |
 | `requests` | `>=2.32.0` | **Sandbox-only.** Not imported by `main.py` or `tools.py` | advertised to the model at `main.py:120`; rationale at `main.py:259-260` |
