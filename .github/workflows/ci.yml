@@ -250,11 +250,32 @@ jobs:
         #                  alone would report nothing.
         #
         # MIN_PASSED is a floor, not an equality: adding tests must not fail the
-        # build. Raise it when the suite grows. 285 measured 2026-08-06 on
-        # Python 3.11.14 (SPEC-CI-001 AC-1) — 282 at authoring, +3 from the
-        # pulse-blanking fix, +5 from the line-by-line stream render, +1 from the
-        # readline prompt-width guard, +5 from the inline-markdown renderer and the
-        # live code highlighter.
+        # build. Raise it when the suite grows.
+        #
+        # 469 MEASURED 2026-08-06 on Python 3.11.14, from a real run — not
+        # computed from an expected delta. That distinction is the whole point:
+        # the floor exists to catch tests that stopped being COLLECTED, and
+        # arithmetic on a delta cannot see a test that was never found.
+        #
+        # Where the number comes from:
+        #   282  at SPEC-CI-001 authoring
+        #    +3  pulse-blanking fix
+        #    +5  line-by-line stream render
+        #    +1  readline prompt-width guard
+        #    +5  inline-markdown renderer and live code highlighter
+        #   ---
+        #   296  the previous floor (the suite had since drifted to 298; a floor
+        #        that trails the real count is safe, which is why it went
+        #        unnoticed)
+        #   +69  SPEC-INPUT-001 tests/test_params.py
+        #   +66  SPEC-INPUT-001 tests/test_settings.py
+        #   +11  tests/test_source_seam.py — 7 new source-level assertions
+        #        (AC-INJ's single emission site, AC-STDIN, AC-SYN) plus 4 from
+        #        params.py and settings.py joining FIRST_PARTY
+        #   +25  tests/test_main_integration.py — AC-INJ end to end, AC-CAP,
+        #        AC-ONCE, AC-MASK, AC-FUTURE, and the /params REPL dispatch
+        #   ---
+        #   469
         #
         # This step is NOT a second coverage gate (N5) — it reads no coverage
         # figure and restates no floor. It counts tests.
@@ -265,7 +286,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 296
+          MIN_PASSED = 469
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

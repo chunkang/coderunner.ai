@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import io
 import re
+import readline
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,8 @@ from rich.console import Console
 
 import main
 import memory
+import params
+import settings
 from conftest import make_record
 from vectorstore import VectorStore
 
@@ -1026,3 +1030,656 @@ def test_a_fence_marker_is_never_shown_even_half_typed(
     main.render_stream("T", "cyan", _chunks("x\n```python\nprint(1)\n```\n"),
                        highlight_code=True)
     assert "```" not in _visible(buf.getvalue())
+
+
+# ==============================================================================
+#  SPEC-INPUT-001 — declared parameters
+# ------------------------------------------------------------------------------
+#  Covers  : AC-INJ (execution), AC-SYN, AC-CAP, AC-ONCE, AC-MASK, AC-FUTURE.
+#            The pure halves are in tests/test_params.py and
+#            tests/test_settings.py, which run on a bare interpreter.
+#
+#  Three of these exist because a plausible implementation is GREEN while doing
+#  the wrong thing, and they are the ones to read first:
+#
+#    * AC-INJ  — the difference between safe and unsafe is one character inside
+#                an f-string, and BOTH versions run the script successfully.
+#    * AC-CAP  — the tidy refactor that breaks it (`code = prelude + code`)
+#                passes every other test in this repository.
+#    * AC-ONCE — prompting per attempt passes a single-attempt test and asks the
+#                user for their API key three times before the turn gives up.
+# ==============================================================================
+
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Never read or write the developer's real ~/.coderunner/settings.json.
+
+    Autouse rather than opt-in: `_resolve_param_policy()` reaches for
+    settings.SETTINGS_PATH by default, and a test that forgot this would read a
+    file whose contents decide whether capture happens — passing or failing
+    depending on a machine's history.
+    """
+    target = tmp_path / "settings.json"
+    monkeypatch.setattr(settings, "SETTINGS_PATH", target)
+    monkeypatch.delenv(settings.ENV_OVERRIDE, raising=False)
+    return target
+
+
+def session_with(policy: str) -> settings.PolicySession:
+    """A session whose policy is already resolved, so no file is consulted."""
+    return settings.PolicySession(policy=settings.Policy(policy, settings.PROV_FILE))
+
+
+def reply_with(code: str, thought: str = "Thought: I need a value.") -> str:
+    return f"{thought}\n\n```python\n{code}\n```"
+
+
+CITY_CODE = '# @param city: str = "Which city?"\nprint(city)'
+SECRET_CODE = '# @param api_key: secret = "API key"\nprint("token " + api_key)'
+
+
+@pytest.fixture()
+def answers(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Script the user's replies by parameter name, recording every prompt."""
+    scripted: dict[str, str] = {}
+    scripted["_asked"] = []  # type: ignore[assignment]
+
+    def ask(declaration: params.Declaration, retry: bool) -> str:
+        scripted["_asked"].append(declaration.name)  # type: ignore[attr-defined]
+        return scripted.get(declaration.name, "")
+
+    monkeypatch.setattr(main, "_ask_param", ask)
+    return scripted
+
+
+def asked(scripted: dict[str, str]) -> list[str]:
+    return scripted["_asked"]  # type: ignore[return-value]
+
+
+# ------------------------------------------------------------------------------
+# AC-INJ — a hostile value arrives as DATA, through the real execution path
+# ------------------------------------------------------------------------------
+
+#: Measured 2026-08-06. Naively interpolated, this executes `id` and prints
+#: `uid=501(kurapa) gid=20(staff) …`. Through repr() it arrives as a
+#: 39-character string. BOTH EXIT 0.
+HOSTILE = 'Seoul"; import os; os.system("id"); x="'
+
+#: The same attack needing no quote character at all: naively interpolated it
+#: yields four statements where the author wrote one.
+HOSTILE_NEWLINES = 'a\nimport os\nos.system("id")\nb = "'
+
+_PROBE = '\nprint(len(city))\nprint(repr(city))'
+
+
+@pytest.mark.parametrize("value", [HOSTILE, HOSTILE_NEWLINES])
+def test_a_hostile_value_round_trips_as_data_through_run_python(value: str) -> None:
+    """The assertion is on the ROUND-TRIPPED VALUE, never on the exit status.
+
+    `f'city = "{value}"'` also exits 0, also produces output, and also leaves a
+    cleaned-up temp directory. In the REPL it shows a green `Execution OK (rc=0)`
+    panel, the model receives its stdout as success feedback and the turn is
+    captured as a solved task. The only thing separating the two constructions is
+    WHAT THE OUTPUT SAYS.
+    """
+    declarations = params.parse_declarations(CITY_CODE)
+    prelude = params.render_prelude(declarations, {"city": value})
+
+    result = main.run_python("print(city)" + _PROBE, prelude=prelude)
+
+    assert result.ok
+    assert f"\n{len(value)}\n" in "\n" + result.stdout
+    assert repr(value) in result.stdout
+    assert "uid=" not in result.stdout  # `id` did not run
+    assert "uid=" not in result.stderr
+
+
+def test_the_unsafe_construction_really_does_execute_the_value() -> None:
+    """AC-INJ observed FAILING, permanently, against the construction it forbids.
+
+    A gate never observed failing is not known to be a gate. This drives the
+    exact f-string interpolation `params.render_prelude()` refuses to contain,
+    through the same `run_python()`, with the same value acceptance.md measured
+    on 2026-08-06 — and watches the injected statement run.
+
+    The discriminator is `uid=`, which appears in the OUTPUT of `id` and nowhere
+    in the value itself. That distinction is the point: an assertion on the value
+    text would match both halves, since the safe half prints the attack back as
+    data. Only what `id` PRINTS separates them.
+
+    Both halves exit 0. That is the whole reason AC-INJ asserts the value.
+    """
+    probe = "print(city)" + _PROBE
+
+    unsafe = main.run_python(probe, prelude=f'city = "{HOSTILE}"')
+    safe = main.run_python(probe, prelude=params.render_prelude(
+        params.parse_declarations(CITY_CODE), {"city": HOSTILE}
+    ))
+
+    assert unsafe.returncode == 0 and safe.returncode == 0
+    assert "uid=" in unsafe.stdout  # the attack lands: `id` ran
+    assert "uid=" not in safe.stdout  # and repr() stops it
+    assert repr(HOSTILE) in safe.stdout  # intact, not mangled
+    assert "39" in safe.stdout  # all 39 characters of it
+
+
+def test_a_hostile_value_survives_a_whole_turn_as_data(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str]
+) -> None:
+    answers["city"] = HOSTILE
+    client = FakeClient([reply_with(CITY_CODE + _PROBE), ANSWER_REPLY])
+
+    main.agentic_turn(client, conv, "weather please", tmp_store, session_with(
+        settings.POLICY_ALWAYS
+    ))
+
+    stdout = "".join(
+        message["content"] for message in conv.messages if message["role"] == "user"
+    )
+    assert repr(HOSTILE) in stdout
+    assert "uid=" not in stdout
+
+
+# ------------------------------------------------------------------------------
+# AC-SYN — the declaration syntax cannot disarm code extraction
+# ------------------------------------------------------------------------------
+
+
+def test_a_declaration_inside_the_fence_leaves_the_block_intact() -> None:
+    extracted = main.extract_last_python_block(reply_with(CITY_CODE))
+    assert extracted == CITY_CODE
+    assert extracted  # non-empty, so main.py:826 does not short-circuit
+
+
+def test_a_separate_params_fence_would_silently_disarm_the_turn() -> None:
+    """The measurement that disqualified the alternative (N5), asserted so the
+    reason survives as a fact rather than as a paragraph.
+
+    The regex's optional `(?:python|py)?` does not match `params`, so the OPENING
+    fence of a params block is not a match — but its CLOSING fence pairs with the
+    opening fence of the following python block, and `(.*?)` captures the empty
+    string between them. `extract_last_python_block()` takes `matches[-1]`, which
+    is that empty string, and the empty string is FALSY at main.py:826.
+
+    The consequence is the worst available: the script is never executed and
+    nothing reports an error. Reverse the two blocks and it works — which is why
+    the form is forbidden outright rather than an order being mandated.
+    """
+    response = (
+        "Here you go.\n\n```params\ncity: str\n```\n\n```python\nprint(city)\n```\n"
+    )
+    assert main.CODE_BLOCK_RE.findall(response) == [""]
+    assert main.extract_last_python_block(response) == ""
+    assert not main.extract_last_python_block(response)  # the falsy branch
+
+
+def test_a_direct_answer_turn_asks_for_nothing(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    isolated_settings: Path,
+) -> None:
+    """A session that never declares a parameter never asks and never creates
+    the file. That is the whole of what makes the settings.json reversal cheap."""
+    main.agentic_turn(FakeClient([DIRECT_REPLY]), conv, "explain lists", tmp_store)
+
+    assert asked(answers) == []
+    assert not isolated_settings.exists()
+
+
+# ------------------------------------------------------------------------------
+# AC-FUTURE — a `from __future__` import survives the prelude
+# ------------------------------------------------------------------------------
+
+
+def test_a_future_import_in_generated_code_still_runs_with_a_prelude() -> None:
+    code = "from __future__ import annotations\nprint(city)"
+    result = main.run_python(code, prelude="city = 'Seoul'")
+
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == "Seoul"
+
+
+def test_without_the_guard_the_same_script_is_a_syntax_error() -> None:
+    """The measured failure the guard exists for, driven end to end.
+
+    Impact is total: the script does not run at all and the model is handed a
+    SyntaxError for code it wrote correctly, then burns its remaining attempts
+    at main.py:792 "fixing" it.
+    """
+    result = main.run_python(
+        "city = 'Seoul'\nfrom __future__ import annotations\nprint(city)"
+    )
+    assert not result.ok
+    assert "__future__" in result.stderr
+
+
+# ------------------------------------------------------------------------------
+# AC-CAP — the injected value is absent from the store BY CONSTRUCTION
+# ------------------------------------------------------------------------------
+
+
+def test_capture_receives_the_very_object_extraction_returned(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Asserted by IDENTITY, not by comparing strings.
+
+    The refactor that destroys this is one line — `code = prelude + code` — and
+    it is the TIDY version: it reads better, it removes an argument from
+    `run_python()`, and a reviewer would plausibly suggest it. Every other test
+    in this suite still passes under it: the script runs, the output is right,
+    the answer streams, the turn is captured. The only visible difference is that
+    coderunner_app_data now holds the user's API key in plaintext, in a store
+    tech.md 7.2 states any later generated script can read.
+
+    A string comparison would pass under that refactor whenever the prelude
+    happened to be empty — which is every test that does not declare a
+    parameter, i.e. almost all of them. IDENTITY IS THE ASSERTION THAT CANNOT BE
+    SATISFIED BY ACCIDENT.
+    """
+    extracted: list[str] = []
+    real_extract = main.extract_last_python_block
+
+    def recording_extract(text: str):
+        block = real_extract(text)
+        extracted.append(block)
+        return block
+
+    captured: list[str] = []
+    real_capture = main._capture_turn
+
+    def recording_capture(client, store, task, thought, code, stdout, recall, warned):
+        captured.append(code)
+        return real_capture(client, store, task, thought, code, stdout, recall, warned)
+
+    monkeypatch.setattr(main, "extract_last_python_block", recording_extract)
+    monkeypatch.setattr(main, "_capture_turn", recording_capture)
+
+    answers["api_key"] = "sk-live-DEADBEEF"
+    client = FakeClient([reply_with(SECRET_CODE), ANSWER_REPLY])
+    main.agentic_turn(client, conv, "call the API", tmp_store, session_with(
+        settings.POLICY_ALWAYS
+    ))
+
+    assert len(captured) == 1
+    assert captured[0] is extracted[-1], (
+        "the prelude was merged into `code` before capture; the user's value is "
+        "now persisted in plaintext"
+    )
+
+
+def test_a_secret_reaches_none_of_remember_successs_arguments(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Not task, not thought, not code, not stdout."""
+    recorded: list[tuple] = []
+    real = main.remember_success
+
+    def recording(store, task, thought, code, stdout, vector, cfg):
+        recorded.append((task, thought, code, stdout))
+        return real(store, task, thought, code, stdout, vector, cfg)
+
+    monkeypatch.setattr(main, "remember_success", recording)
+
+    secret = "sk-live-DEADBEEF"
+    answers["api_key"] = secret
+    client = FakeClient([reply_with(SECRET_CODE), ANSWER_REPLY])
+    main.agentic_turn(client, conv, "call the API", tmp_store, session_with(
+        settings.POLICY_SENSITIVE
+    ))
+
+    assert len(recorded) == 1
+    assert secret not in "\n".join(recorded[0])
+
+
+def test_under_sensitive_excluded_the_secret_is_redacted_at_all_three_sinks(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """E6 names three sinks and this asserts each separately: the screen, the
+    model's conversation, and the persistent store.
+
+    A script that echoes a secret is not contrived — an HTTP error carrying the
+    full URL with the key in its query string does it without the model trying.
+    """
+    buf = _captured_console(monkeypatch)
+    secret = "sk-live-DEADBEEF"
+    answers["api_key"] = secret
+    client = FakeClient([reply_with(SECRET_CODE), ANSWER_REPLY])
+
+    main.agentic_turn(client, conv, "call the API", tmp_store, session_with(
+        settings.POLICY_SENSITIVE
+    ))
+
+    screen = _visible(buf.getvalue())
+    conversation = "\n".join(message["content"] for message in conv.messages)
+    (stored,) = tmp_store.recent(1)
+
+    assert secret not in screen
+    assert secret not in conversation
+    assert secret not in stored.stdout
+    # ...and the surrounding output still arrived, so this is redaction rather
+    # than suppression.
+    assert params.REDACTION_MARKER in stored.stdout
+    assert "token" in stored.stdout
+
+
+def test_under_never_the_turn_is_not_captured_and_one_line_says_so(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    status_lines: list[dict],
+) -> None:
+    """S1. Silence here is indistinguishable from a successful capture."""
+    answers["city"] = "Seoul"
+    client = FakeClient([reply_with(CITY_CODE), ANSWER_REPLY])
+
+    main.agentic_turn(client, conv, "weather please", tmp_store, session_with(
+        settings.POLICY_NEVER
+    ))
+
+    assert tmp_store.count() == 0
+    said = [line for line in status_lines if main.PARAMS_NOT_STORED_MSG in line["message"]]
+    assert len(said) == 1
+
+
+def test_under_always_nothing_is_redacted_and_the_turn_is_captured_in_full(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+) -> None:
+    """Asserted so the policy is known to be DOING something rather than being a
+    no-op that happens to look safe."""
+    secret = "sk-live-DEADBEEF"
+    answers["api_key"] = secret
+    client = FakeClient([reply_with(SECRET_CODE), ANSWER_REPLY])
+
+    main.agentic_turn(client, conv, "call the API", tmp_store, session_with(
+        settings.POLICY_ALWAYS
+    ))
+
+    assert tmp_store.count() == 1
+    (stored,) = tmp_store.recent(1)
+    assert secret in stored.stdout
+
+
+def test_a_non_parameterised_turn_is_captured_under_every_policy(
+    tmp_store: VectorStore, conv: main.Conversation,
+) -> None:
+    """`never` applies to turns that USED parameters, not to the whole store."""
+    client = FakeClient([CODE_REPLY, ANSWER_REPLY])
+    main.agentic_turn(client, conv, "compute the answer", tmp_store, session_with(
+        settings.POLICY_NEVER
+    ))
+    assert tmp_store.count() == 1
+
+
+# ------------------------------------------------------------------------------
+# AC-ONCE — collected once per turn, and before the Live region opens
+# ------------------------------------------------------------------------------
+
+FAILING_CITY = '# @param city: str = "Which city?"\nprint(city)\nraise SystemExit(3)'
+
+
+def test_the_user_is_prompted_exactly_once_across_a_failing_retry(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+) -> None:
+    """E4. The obvious implementation — parse and prompt at the top of each loop
+    iteration — is simpler, passes a single-attempt test, and asks the user for
+    their API key three times before the turn gives up."""
+    answers["city"] = "Seoul"
+    failing = reply_with(FAILING_CITY)
+    client = FakeClient([failing, failing])
+
+    main.agentic_turn(client, conv, "weather please", tmp_store, session_with(
+        settings.POLICY_ALWAYS
+    ))
+
+    assert len(client.chat_calls) == main.MAX_RETRIES  # the loop really ran twice
+    assert asked(answers) == ["city"]
+
+
+def test_attempt_two_carries_the_same_value_as_attempt_one(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preludes: list[str] = []
+    real_run = main.run_python
+
+    def recording(code: str, timeout: int = main.EXEC_TIMEOUT_SEC, prelude: str = ""):
+        preludes.append(prelude)
+        return real_run(code, timeout, prelude)
+
+    monkeypatch.setattr(main, "run_python", recording)
+    answers["city"] = "Seoul"
+    failing = reply_with(FAILING_CITY)
+
+    main.agentic_turn(
+        FakeClient([failing, failing]), conv, "weather please", tmp_store,
+        session_with(settings.POLICY_ALWAYS),
+    )
+
+    assert len(preludes) == 2
+    assert preludes[0] == preludes[1] == "city = 'Seoul'"
+
+
+def test_a_name_first_declared_on_attempt_two_prompts_only_for_itself(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+) -> None:
+    answers["city"] = "Seoul"
+    answers["days"] = "3"
+    first = reply_with(FAILING_CITY)
+    second = reply_with(
+        '# @param city: str = "Which city?"\n'
+        '# @param days: int = "How many days?"\n'
+        "print(city, days)"
+    )
+
+    main.agentic_turn(
+        FakeClient([first, second, ANSWER_REPLY]), conv, "forecast", tmp_store,
+        session_with(settings.POLICY_ALWAYS),
+    )
+
+    assert asked(answers) == ["city", "days"]
+
+
+def test_collection_completes_before_the_live_region_opens(
+    tmp_store: VectorStore, conv: main.Conversation, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S5, asserted on ORDER rather than on count.
+
+    `processing()` opens a transient Rich `Live` region (main.py:562-596) and an
+    `input()` inside one contends with the renderer for the terminal. There is
+    exactly one point in the turn that satisfies this — between main.py:828 and
+    main.py:830 — and asserting the count alone would not catch a
+    correct-but-misplaced prompt.
+    """
+    events: list[str] = []
+    real_processing = main.processing
+
+    @contextmanager
+    def recording(icon, tag, message, style="cyan", *, settle=True):
+        events.append(f"processing:{message}")
+        with real_processing(icon, tag, message, style, settle=settle):
+            yield
+
+    def ask(declaration: params.Declaration, retry: bool) -> str:
+        events.append(f"ask:{declaration.name}")
+        return "Seoul"
+
+    monkeypatch.setattr(main, "processing", recording)
+    monkeypatch.setattr(main, "_ask_param", ask)
+
+    main.agentic_turn(
+        FakeClient([reply_with(CITY_CODE), ANSWER_REPLY]), conv, "weather", tmp_store,
+        session_with(settings.POLICY_ALWAYS),
+    )
+
+    running = next(i for i, e in enumerate(events) if e.startswith("processing:Running"))
+    assert events.index("ask:city") < running
+
+
+# ------------------------------------------------------------------------------
+# AC-MASK — a secret is never echoed, printed, or persisted to history
+# ------------------------------------------------------------------------------
+
+
+def test_a_secret_is_read_through_getpass_and_never_through_input(
+    tmp_store: VectorStore, conv: main.Conversation, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """N3, asserted on the READLINE HISTORY BUFFER rather than on the function
+    call, because the function call is the implementation and the buffer is the
+    property.
+
+    `_install_history()` (main.py:930-957) wires readline and registers an
+    `atexit` writer, so any line read through `input()` while readline is loaded
+    enters the history buffer and is written to CODERUNNER_HISTORY — pinned by
+    compose to /home/runner/.coderunner/history on the volume that survives
+    `--rm`. A secret typed at an `input()` prompt would therefore be persisted in
+    plaintext by a mechanism NO capture policy in this SPEC inspects: every
+    policy, INCLUDING `never`, would report that nothing was stored and would be
+    telling the truth about the only store it knows about.
+
+    `input()` is stubbed to do what readline does on a real TTY — append the line
+    to the history buffer — so the assertion is a live reproduction rather than a
+    vacuous one under pytest's non-tty stdin.
+    """
+    secret = "sk-live-DEADBEEF"
+    plain = "Seoul"
+
+    def fake_input(prompt: str = "") -> str:
+        readline.add_history(plain)  # what readline itself does on a TTY
+        return plain
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(main.getpass, "getpass", lambda prompt="": secret)
+
+    before = readline.get_current_history_length()
+    code = (
+        '# @param city: str = "Which city?"\n'
+        '# @param api_key: secret = "API key"\n'
+        'print(city + " " + api_key)'
+    )
+    main.agentic_turn(
+        FakeClient([reply_with(code), ANSWER_REPLY]), conv, "call it", tmp_store,
+        session_with(settings.POLICY_ALWAYS),
+    )
+    after = [
+        readline.get_history_item(i)
+        for i in range(before + 1, readline.get_current_history_length() + 1)
+    ]
+
+    assert plain in after, "the stubbed input() did not reach readline; test is vacuous"
+    assert secret not in after
+
+
+def test_the_prelude_is_never_printed_streamed_or_panelled(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """N2, and the reason it is a rule with no exceptions.
+
+    The moment display depends on a per-value flag, the display path acquires a
+    branch that a later reclassification can get wrong — and a masked value
+    printed in a prelude defeats the masking completely and irreversibly: it is
+    on the user's scrollback and, in a recorded session, in the recording.
+
+    Asserted on a secret, because a non-secret value is legitimately echoed in
+    the per-parameter confirmation line (O2) and so cannot distinguish the two.
+    """
+    buf = _captured_console(monkeypatch)
+    secret = "sk-live-DEADBEEF"
+    answers["api_key"] = secret
+
+    main.agentic_turn(
+        FakeClient([reply_with('# @param api_key: secret = "API key"\nprint("ok")'),
+                    ANSWER_REPLY]),
+        conv, "call it", tmp_store, session_with(settings.POLICY_ALWAYS),
+    )
+
+    screen = _visible(buf.getvalue())
+    assert secret not in screen
+    assert f"api_key = {params.SECRET_MASK}" in screen  # the mask, not the value
+
+
+def test_the_two_prompt_paths_are_wired_to_different_readers() -> None:
+    """The asymmetry is what invites a "unify these" cleanup. Do not."""
+    plain = main.params.plain_prompt(params.Declaration("city", "str", "Which city?"))
+    secret = main.params.secret_prompt(params.Declaration("k", "secret", "API key"))
+
+    assert "\001" in plain and "\002" in plain
+    assert "\001" not in secret and "\002" not in secret
+
+
+# ------------------------------------------------------------------------------
+# The lazy first-run question
+# ------------------------------------------------------------------------------
+
+
+def test_a_non_interactive_session_falls_back_to_never_and_writes_nothing(
+    tmp_store: VectorStore, conv: main.Conversation, answers: dict[str, str],
+    status_lines: list[dict], isolated_settings: Path,
+) -> None:
+    """Under pytest stdin is not a TTY, so `_resolve_param_policy()` passes
+    `ask=None` and the question cannot be asked. One line says so, nothing is
+    written, and the turn otherwise proceeds normally."""
+    answers["city"] = "Seoul"
+
+    main.agentic_turn(
+        FakeClient([reply_with(CITY_CODE), ANSWER_REPLY]), conv, "weather", tmp_store
+    )
+
+    assert not isolated_settings.exists()
+    assert tmp_store.count() == 0  # `never`
+    params_lines = [line for line in status_lines if line["tag"] == "Params"]
+    assert [line for line in params_lines if line["style"] == "yellow"]
+
+
+# ------------------------------------------------------------------------------
+# /params dispatch in the REPL
+# ------------------------------------------------------------------------------
+# main.py is not under a coverage gate and its share of this SPEC is wiring, so
+# these two exist for the one failure wiring can still have: a command that never
+# reaches its handler, or one that reaches the model instead. Both are invisible
+# to every test above, and both are shipped bugs.
+
+
+def _headless_repl(
+    monkeypatch: pytest.MonkeyPatch, typed: list[str]
+) -> tuple[io.StringIO, list[str]]:
+    """Run repl() over a scripted transcript with no Ollama and no store."""
+    buf = _captured_console(monkeypatch)
+    reached_model: list[str] = []
+    lines = iter([*typed, "/exit"])
+
+    monkeypatch.setattr(main, "show_banner", lambda: None)
+    monkeypatch.setattr(main, "_install_history", lambda: None)
+    monkeypatch.setattr(main, "build_client", lambda: FakeClient([]))
+    monkeypatch.setattr(main, "preflight", lambda client: True)
+    monkeypatch.setattr(main, "_open_memory_store", lambda: None)
+    monkeypatch.setattr(main, "_prompt_user", lambda: next(lines))
+    monkeypatch.setattr(
+        main, "agentic_turn", lambda *a, **k: reached_model.append(a[2])
+    )
+
+    main.repl()
+    return buf, reached_model
+
+
+def test_params_is_handled_locally_and_never_reaches_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buf, reached_model = _headless_repl(monkeypatch, ["/params"])
+
+    assert reached_model == []
+    assert "Parameter capture policy" in _visible(buf.getvalue())
+
+
+def test_params_capture_sets_the_policy_for_the_rest_of_the_session(
+    monkeypatch: pytest.MonkeyPatch, isolated_settings: Path
+) -> None:
+    """The replacement policy has to be installed on the session, or the choice
+    is written to disk and then ignored until the next launch."""
+    buf, reached_model = _headless_repl(monkeypatch, ["/params capture 2", "/params"])
+    screen = _visible(buf.getvalue())
+
+    assert reached_model == []
+    assert isolated_settings.exists()
+    assert settings.POLICY_NEVER in screen
+    assert settings.PROVENANCE_LABELS[settings.PROV_FILE] in screen

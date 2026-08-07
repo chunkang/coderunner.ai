@@ -27,7 +27,15 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 #: The first-party product modules. `.claude/` and `.moai/` are agent tooling
 #: and are not product code; `conftest.py` and `tests/` are the harness.
-FIRST_PARTY = ("main.py", "memory.py", "recall.py", "tools.py", "vectorstore.py")
+FIRST_PARTY = (
+    "main.py",
+    "memory.py",
+    "params.py",
+    "recall.py",
+    "settings.py",
+    "tools.py",
+    "vectorstore.py",
+)
 
 
 def parse(name: str) -> ast.Module:
@@ -143,6 +151,179 @@ def test_no_first_party_module_imports_numpy(name: str) -> None:
     seam — quietly stops being the only place vector maths happens.
     """
     assert "numpy" not in imported_roots(parse(name))
+
+
+def test_params_and_settings_import_only_stdlib() -> None:
+    """SPEC-INPUT-001 spec.md 5.2: two more stdlib-only leaves, extending the
+    seam rather than departing from it.
+
+    Both are gated at 100%, and neither has vectorstore.py's excuse for 85%:
+    with no external dependency there is no line in either that a test cannot
+    reach. The moment a third-party import lands here, that stops being true and
+    the floor becomes something to argue about rather than something to meet.
+    """
+    for name in ("params.py", "settings.py"):
+        non_stdlib = imported_roots(parse(name)) - set(sys.stdlib_module_names)
+        assert non_stdlib == set(), f"{name} must import stdlib only; found {sorted(non_stdlib)}"
+
+
+# ------------------------------------------------------------------------------
+# AC-INJ — params.py has exactly ONE literal-emission site  (SPEC-INPUT-001 U1)
+# ------------------------------------------------------------------------------
+#
+# Measured 2026-08-06, with value = 'Seoul"; import os; os.system("id"); x="':
+#
+#     f'city = "{value}"'   ->  rc 0, stdout begins `uid=501(kurapa) …`
+#     f'city = {value!r}'   ->  rc 0, stdout `39 'Seoul"; …'`
+#
+# BOTH EXIT 0. Both produce output. In the REPL the first one shows a green
+# `Execution OK (rc=0)` panel, the model receives the stdout as success feedback
+# and the turn is captured as a solved task. The difference is two characters
+# inside an f-string that a reviewer reads as "put the city in the script".
+#
+# The runtime half of AC-INJ is in tests/test_main_integration.py. This half is
+# the structural one: a module with exactly one emission site has exactly one
+# line for that criterion to be protecting.
+
+
+def _quote_adjacent_interpolations(tree: ast.Module) -> list[str]:
+    """Every f-string placeholder sitting next to a literal quote character."""
+    offences: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.JoinedStr):
+            continue
+        for part in node.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                if "'" in part.value or '"' in part.value:
+                    offences.append(f"line {node.lineno}: {part.value!r}")
+    return offences
+
+
+def test_params_py_has_exactly_one_literal_emission_site() -> None:
+    """One function, one `repr()`, so there is no second path a raw value
+    could take. `_literal()` may be CALLED from more than one place; what must
+    not exist is a second place that turns a value into source text."""
+    tree = parse("params.py")
+
+    repr_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "repr"
+    ]
+    assert len(repr_calls) == 1, f"params.py makes {len(repr_calls)} repr() calls; expected 1"
+
+
+def test_no_f_string_in_params_py_puts_a_value_between_quotes() -> None:
+    """The forbidden construction, stated as a property of the syntax tree.
+
+    `f'city = "{value}"'` is what M3 measured executing `os.system("id")`. Any
+    f-string in this module whose literal parts carry a quote character is either
+    that bug or one edit away from it, so the assertion is on the absence of the
+    quote rather than on the absence of the adjacency.
+    """
+    assert _quote_adjacent_interpolations(parse("params.py")) == []
+
+
+def test_params_py_uses_no_percent_formatting_or_str_format() -> None:
+    """The same hazard in its two other spellings.
+
+    `'city = "%s"' % value` and `'city = "{}"'.format(value)` are exactly as
+    unsafe as the f-string and would slip past a check written only for f-strings.
+    """
+    tree = parse("params.py")
+
+    modulo = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.BinOp)
+        and isinstance(node.op, ast.Mod)
+        and isinstance(node.left, ast.Constant)
+        and isinstance(node.left.value, str)
+    ]
+    assert modulo == [], "params.py uses %-formatting on a string literal"
+
+    formats = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "format"
+    ]
+    assert formats == [], "params.py calls .format() on something"
+
+
+# ------------------------------------------------------------------------------
+# AC-STDIN — the child's stdin is untouched  (SPEC-INPUT-001 U2, N1)
+# ------------------------------------------------------------------------------
+
+
+def test_run_python_passes_no_stdin_argument() -> None:
+    """Measured 2026-08-06 against `run_python()`'s exact argument list, for a
+    script whose only statement is `input("hi: ")`:
+
+        rc = 1, stdout = 'hi: ', stderr = EOFError: EOF when reading a line
+
+    `capture_output=True` pipes stdout and stderr and says NOTHING about stdin,
+    so the child inherits the parent's descriptor 0. Under pytest that is closed
+    or a pipe, hence the EOFError. Inside the container it is the REPL's own TTY
+    (docker-compose.yml:67-68), so the child would BLOCK, consuming the user's
+    keystrokes, for the full CODERUNNER_TIMEOUT — a silent thirty-second hijack
+    of the terminal the user is sitting at.
+
+    Asserted at source level rather than by observing a run, so it survives a
+    refactor: SPEC-INPUT-001 adds a `prelude` argument to this function and the
+    property being protected is that it added nothing else.
+    """
+    tree = parse("main.py")
+
+    subprocess_runs = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+    ]
+    assert subprocess_runs, "main.py no longer calls subprocess.run at all"
+
+    for call in subprocess_runs:
+        passed = {keyword.arg for keyword in call.keywords}
+        assert "stdin" not in passed, "run_python() now passes stdin= to the child"
+
+
+def test_the_prompt_still_forbids_input_and_now_offers_an_alternative() -> None:
+    """N1: main.py:136 is AMENDED, NOT DELETED. M1 is why it is there.
+
+    Read from the source rather than from an import so this runs on a bare
+    interpreter with the rest of the file.
+    """
+    source = (_ROOT / "main.py").read_text(encoding="utf-8")
+    prompt = source[source.index("SYSTEM_PROMPT = ") : source.index("# Data model")]
+
+    assert "No input()" in prompt
+    assert "do NOT call input()" in prompt
+    assert "# @param" in prompt
+
+
+def test_the_prompt_describes_no_second_fenced_block() -> None:
+    """AC-SYN, asserted on the instruction rather than only on the parser.
+
+    Measured 2026-08-06: a ```params``` block placed BEFORE the ```python``` block
+    makes CODE_BLOCK_RE.findall() return `['']` — the closing fence of the first
+    pairs with the opening fence of the second — so extract_last_python_block()
+    returns the empty string, `if not code:` is TRUE, and the turn silently
+    answers as if no code had been produced. No exception, no failed execution,
+    no retry. Reverse the order and it works, which is why N5 forbids the form
+    outright rather than mandating an order.
+    """
+    source = (_ROOT / "main.py").read_text(encoding="utf-8")
+    prompt = source[source.index("SYSTEM_PROMPT = ") : source.index("# Data model")]
+
+    assert prompt.count("```") == 2, "SYSTEM_PROMPT now describes more than one fenced block"
+    assert "```params" not in prompt
 
 
 def test_the_sandbox_still_receives_only_the_tools_module() -> None:

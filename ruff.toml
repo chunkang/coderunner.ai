@@ -56,5 +56,11 @@ select = [
 #       urllib.request.urlopen is the mechanism, with a fixed https URL.
 "tools.py" = ["BLE001", "S110", "S310"]
 
-# `assert` is the point of a test.
-"tests/*" = ["S101"]
+# S101: `assert` is the point of a test.
+# S105: a suite that verifies SPEC-INPUT-001's secret handling has to contain a
+#       secret to verify it with. Every hit is a fixture value like
+#       `secret = "sk-live-DEADBEEF"`, asserted to be ABSENT from the screen, the
+#       conversation and the store. Silencing the rule repository-wide would be
+#       wrong — it stays live on params.py, where the two exceptions carry their
+#       own inline `noqa` and their own reason.
+"tests/*" = ["S101", "S105"]

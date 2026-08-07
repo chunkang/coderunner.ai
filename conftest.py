@@ -181,6 +181,18 @@ def fake_embedder() -> FakeEmbedClient:
 # module, whose degradation branches are exercised through a real engine — is
 # gated at 85%.
 #
+# SPEC-INPUT-001 adds params.py and settings.py, both at 100% and neither with
+# vectorstore.py's excuse: both are stdlib-only leaves with no external
+# dependency, so there is no line in either that a test cannot reach. params.py
+# in particular is the module where a bug is a CODE-EXECUTION bug (spec.md 5.2),
+# and settings.py's eight degradation branches are exactly the family that ships
+# looking healthy. If a floor here is ever lowered it should be by an amendment
+# saying which branch is going untested and why.
+#
+# EVERY ENTRY HERE NEEDS A MATCHING `--cov=` IN pytest.ini. With the entry alone,
+# `cov.report(include=[...])` raises and the `except` below fails the session
+# with "coverage unavailable" — loudly, which is the right direction.
+#
 # `trylast=True` matters: pytest-cov stops its controller and flushes the data
 # file in its own `pytest_sessionfinish`, so this must run after it.
 
@@ -189,6 +201,8 @@ PER_FILE_COVERAGE_TARGETS = {
     "memory.py": 100.0,
     "recall.py": 100.0,
     "vectorstore.py": PER_FILE_COVERAGE_FLOOR,
+    "params.py": 100.0,
+    "settings.py": 100.0,
 }
 
 

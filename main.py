@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import atexit
+import getpass
 import itertools
 import os
 import re
@@ -32,7 +33,7 @@ import textwrap
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import httpx
@@ -45,6 +46,8 @@ from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
 
+import params
+import settings
 from memory import (
     MemoryConfig,
     format_recall_block,
@@ -134,6 +137,15 @@ SYSTEM_PROMPT = textwrap.dedent(
        - Always set a User-Agent header when scraping (some sites 403 empty UA).
        - Must print the final answer to stdout.
        - No input(), no infinite loops. Deterministic and self-contained.
+       - If you need a value only the user has (a city, an API key, a file
+         path), do NOT call input(). Declare it as a comment INSIDE this same
+         python block, before first use, then just use the name:
+
+           # @param city: str = "Which city?"
+           print(city)
+
+         Types: str, int, float, secret. Use secret for keys and passwords —
+         it is masked when typed. Never emit a second fenced block for these.
     4. Stop after the fenced block. Do not narrate results yet.
 
     DIRECT protocol (no code needed):
@@ -440,12 +452,35 @@ class ExecResult:
     returncode: int
 
 
-def run_python(code: str, timeout: int = EXEC_TIMEOUT_SEC) -> ExecResult:
+def run_python(code: str, timeout: int = EXEC_TIMEOUT_SEC, prelude: str = "") -> ExecResult:
+    """Execute one generated script. ``prelude`` carries the user's declared values.
+
+    THE PRELUDE IS MERGED HERE AND NOWHERE ELSE, and that is the single most
+    consequential line in SPEC-INPUT-001. `agentic_turn()` passes `code` to
+    `_capture_turn()` (main.py:860-869); if the combined string were built in the
+    caller, the natural next edit is to pass the combined string, and user-typed
+    secrets start persisting to coderunner_app_data in plaintext where any later
+    generated script can read them (tech.md 7.2).
+
+    Keeping the assembly here means there is NO VARIABLE IN THE CALLER'S SCOPE
+    holding a user value alongside code. The property is enforced by the absence
+    of a thing, which is the only kind of enforcement that survives refactoring.
+    `code = prelude + code` is the tidy version, reads better, removes an
+    argument — and is what AC-CAP asserts object identity to catch, because every
+    other test in this repository stays green under it.
+
+    stdin is untouched, deliberately (U2). `capture_output=True` below pipes
+    stdout and stderr and says nothing about stdin, so the child inherits the
+    parent's descriptor 0 — `EOFError` under pytest, and the REPL's own TTY in
+    the container, where an `input()` in generated code would BLOCK and eat the
+    user's keystrokes for the full timeout. That is why main.py:136 still forbids
+    `input()` and why the `# @param` alternative exists at all.
+    """
     workdir = tempfile.mkdtemp(prefix="coderunner_")
     script_path = os.path.join(workdir, "run.py")
 
     with open(script_path, "w", encoding="utf-8") as fh:
-        fh.write(SCRIPT_HEADER + "\n" + code + "\n")
+        fh.write(SCRIPT_HEADER + "\n" + params.splice_prelude(code, prelude) + "\n")
 
     # Make the tools helper importable from the generated script without
     # exposing the rest of the app. Copy, don't symlink, so the sandbox is
@@ -751,13 +786,111 @@ def _capture_turn(
     return False if already_warned else _warn_memory(MEMORY_UNWRITABLE_MSG)
 
 
+# ------------------------------------------------------------------------------
+# Declared parameters (SPEC-INPUT-001)
+# ------------------------------------------------------------------------------
+# Wiring only. Every decision — what counts as a declaration, how a literal is
+# rendered, what a malformed settings file means, what gets redacted — lives in
+# params.py or settings.py, both gated at 100%. main.py is under no coverage
+# floor (spec.md 5.3), so the rule holding the line is: if a change here would
+# need a new test to be trusted, it is in the wrong file.
+
+
+def _ask_param(decl: params.Declaration, retry: bool) -> str:
+    """Read one declared value. Two prompt paths, and they must stay different.
+
+    A `secret` NEVER goes through `input()` (N3). `_install_history()`
+    (main.py:930-957) wires readline and registers an `atexit` writer, so any
+    line read through `input()` while readline is loaded enters the history
+    buffer and is written to CODERUNNER_HISTORY — pinned by compose to
+    /home/runner/.coderunner/history (docker-compose.yml:107), on the volume that
+    survives `--rm`. A secret typed at an `input()` prompt would therefore be
+    persisted in plaintext next to the memory store, by a mechanism NO capture
+    policy in this SPEC inspects: every policy, including `never`, would report
+    that nothing was stored and would be telling the truth about the only store
+    it knows about.
+
+    `getpass` is also not readline, which is why its prompt carries no
+    \\001/\\002 bracketing — it writes the prompt raw and would emit those as
+    literal control bytes. The two paths therefore look gratuitously
+    inconsistent, one coloured and bracketed and one plain, and that is exactly
+    what invites a later cleanup to unify them. Do not.
+    """
+    # Flushed for both paths, matching _prompt_user() (main.py:977-981): Rich
+    # buffers its own writes, and neither input() nor getpass goes through it, so
+    # without this the prompt can be drawn before the line that explains it.
+    console.file.flush()
+    if decl.type == params.TYPE_SECRET:
+        return getpass.getpass(params.secret_prompt(decl, retry))
+    return input(params.plain_prompt(decl, retry))
+
+
+def _ask_policy(prompt: str) -> str:
+    console.file.flush()
+    return input(prompt)
+
+
+def _resolve_param_policy(session: settings.PolicySession) -> settings.Policy:
+    """The capture policy for this session, asked once on the first parameterised
+    turn and never at startup (spec.md 4.5).
+
+    `ask=None` when stdin is not interactive — a piped session or a test. The
+    question then cannot be asked, so the policy falls back to `never`, one line
+    says so, and no file is written.
+    """
+    return settings.ensure_policy(
+        session,
+        _ask_policy if sys.stdin.isatty() else None,
+        lambda line: console.print(Text(f"     {line}", style="dim")),
+        lambda line: status("⚙️", "Params", line, "yellow"),
+    )
+
+
+def _collect_params(
+    declarations: list[params.Declaration],
+    values: dict[str, object],
+    session: settings.PolicySession,
+) -> list[params.Declaration]:
+    """Prompt for whatever this attempt declared and does not already have.
+
+    Returns the declarations newly collected here, so the caller can accumulate
+    them across attempts. Nothing is prompted twice in a turn (E4), and the
+    assembled prelude is never printed — for any value, secret or not (N2).
+    """
+    pending = params.pending_declarations(declarations, values)
+    if not pending:
+        return pending
+
+    status("⚙️", "Params", params.announcement(pending), "cyan")
+    _resolve_param_policy(session)
+    params.collect_values(pending, _ask_param, values)
+    for line in params.confirmations(pending, values):
+        status("⚙️", "Params", line, "cyan")
+    return pending
+
+
+PARAMS_NOT_STORED_MSG = (
+    "This turn used parameters — not stored, per the capture policy (/params)."
+)
+
+
 def agentic_turn(
     client: ollama.Client,
     conv: Conversation,
     user_input: str,
     store: VectorStore | None = None,
+    param_session: settings.PolicySession | None = None,
 ) -> None:
     conv.user(user_input)
+
+    # Values are collected once per turn and held here for the life of it. A
+    # mistyped value therefore cannot be corrected within the turn; the escape is
+    # Ctrl+C, already handled as "abort this turn only" at main.py:1022-1023. The
+    # alternative — re-prompting on every attempt — means typing an API key three
+    # times to watch a script fail three times (spec.md 3.4).
+    param_values: dict[str, object] = {}
+    param_declared: list[params.Declaration] = []
+    param_session = settings.PolicySession() if param_session is None else param_session
 
     # Retrieval runs ONCE per turn, before the loop, so the embedding round trip
     # is not paid per attempt. The resulting vector is cached and reused by the
@@ -827,8 +960,37 @@ def agentic_turn(
             status("💬", "LLaMA", "No code produced — returning direct answer.", "yellow")
             return
 
+        # `code` IS NEVER REASSIGNED past this point. It is the object handed to
+        # _capture_turn() below, and the prelude is merged inside run_python()
+        # instead, so an injected value is absent from the store by construction
+        # rather than by filtering (U3, N4, AC-CAP).
+        #
+        # Collection sits HERE, after render_stream() has returned and before the
+        # processing() block below: processing() opens a transient Rich Live
+        # region (main.py:562-596), and a prompt inside one fights the renderer
+        # for the terminal. There is exactly one point in the turn that satisfies
+        # S5 and this is it.
+        declarations = params.parse_declarations(code)
+        param_declared.extend(_collect_params(declarations, param_values, param_session))
+
         with processing("⚙️", "System", "Running generated Python code…", "yellow"):
-            result = run_python(code)
+            result = run_python(code, prelude=params.render_prelude(declarations, param_values))
+
+        # Empty until the first parameterised turn resolves it, which is what
+        # keeps a turn that declared nothing byte-for-byte the pre-feature turn.
+        policy = param_session.policy.value if param_session.policy is not None else ""
+
+        # ONE redaction point, not three. E6 names three sinks — the panel below,
+        # the feedback splices at :838-842 and :878-884, and the capture call —
+        # and redacting the RESULT itself closes all three at once, structurally.
+        # Three helpers would be three chances to update two of them.
+        secrets = params.secret_values(param_declared, param_values)
+        if secrets and policy == settings.POLICY_SENSITIVE:
+            result = replace(
+                result,
+                stdout=params.redact(result.stdout, secrets),
+                stderr=params.redact(result.stderr, secrets),
+            )
 
         show_exec_result(result)
 
@@ -857,6 +1019,14 @@ def agentic_turn(
             # mid-flow. Captured on a retrieval MISS too — a miss is exactly
             # what a new task looks like, and skipping it would freeze the
             # store at its first record (M3).
+            #
+            # S1: under `never`, a parameterised turn is not captured at all —
+            # and one line says so, because silence here is indistinguishable
+            # from a successful capture.
+            if param_declared and policy == settings.POLICY_NEVER:
+                status("⚙️", "Params", PARAMS_NOT_STORED_MSG, "yellow")
+                return
+
             _capture_turn(
                 client,
                 store,
@@ -996,6 +1166,11 @@ def repl() -> None:
     # feature is off or unavailable, and every downstream call handles that.
     store = _open_memory_store()
 
+    # Empty until the first turn that declares a parameter. Nothing is read from
+    # disk and nothing is written here: a user who never uses the feature is
+    # never asked and settings.json is never created for them (spec.md 4.5).
+    param_session = settings.PolicySession()
+
     while True:
         console.print(Rule(style="dim"))
         try:
@@ -1012,9 +1187,16 @@ def repl() -> None:
         # Handled locally, beside the exit words: /memory never reaches the model.
         if handle_memory_command(store, stripped, lambda line: console.print(line), MEMORY_CFG):
             continue
+        params_handled, chosen = settings.handle_params_command(
+            stripped, lambda line: console.print(line), param_session.policy
+        )
+        if params_handled:
+            if chosen is not None:
+                param_session.policy = chosen
+            continue
 
         try:
-            agentic_turn(client, conv, stripped, store)
+            agentic_turn(client, conv, stripped, store, param_session)
         except ollama.ResponseError as err:
             status("❌", "LLaMA", f"API error: {err}", "red")
         except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as err:
