@@ -139,8 +139,7 @@ jobs:
         # two are the same green tick.
         #
         # Reproduce locally with exactly this command (SPEC-CI-001 U4):
-        # T8(c) EXPERIMENT — requirements.txt deliberately omitted. REVERT.
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Preflight — assert the five imports the suite silently assumes
         # THIS IS NOT REDUNDANT WITH THE INSTALL STEP ABOVE, and the ordering is
@@ -381,9 +380,6 @@ jobs:
         run: |
           docker run --rm --entrypoint python coderunner-ai:latest \
             -c "import main, memory, recall, vectorstore, tools; print('import smoke ok')"
-
-      - name: T8(d) EXPERIMENT — edit main.py without rebuilding. REVERT.
-        run: echo '# T8 experiment marker' >> main.py
 
       - name: Source integrity — the image must carry the checked-out tree
         # WHY A BUILD PLUS AN IMPORT SMOKE IS NOT ENOUGH.
