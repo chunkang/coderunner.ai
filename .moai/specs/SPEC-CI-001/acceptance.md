@@ -24,7 +24,7 @@ Covers U1, U2, S3, N3, E3.
 
 **Then**
 
-- the summary line reports **282 passed** and **0 skipped**;
+- the summary line reports **0 skipped** and a pass count at or above the recorded floor — **285** as of 2026-08-06, held in exactly one place, `MIN_PASSED` in `ci.yml` (282 at authoring; the pulse-blanking fix added three);
 - coverage reports **`memory.py` 100%**, **`recall.py` 100%**, **`vectorstore.py` ≥ 85%**
   (measured at 100% on the host, 2026-08-05), against the floors at `conftest.py:187-192`;
 - the log contains the literal line **`Per-file coverage gate passed`**, emitted by
@@ -40,7 +40,7 @@ This is the sharpest thing in the document, so it is spelled out rather than imp
 | | Working job | Broken job |
 |---|---|---|
 | Install | `requirements.txt` **and** `requirements-dev.txt` | `requirements-dev.txt` only |
-| Result | **282 passed, 0 skipped** | **242 passed, 1 skipped** |
+| Result | **285 passed, 0 skipped** | **242 passed, 1 skipped** |
 | Exit status | **0** | **0** |
 | Coverage gate | passes | passes |
 | `Per-file coverage gate passed` in log | yes | yes |
@@ -55,6 +55,13 @@ outright: these are for `pytest` only).
 At a glance the two are indistinguishable. **The count and the zero-skip assertion are the only
 things that separate them.** Any future change that relaxes this criterion to "the job exits 0"
 silently readmits the broken column.
+
+**Note the broken column did not move when the suite grew.** On 2026-08-06 three tests were
+added and the working column went 282 → 285; the broken column stayed at **242**, because the
+new tests live in `tests/test_main_integration.py` — the very module that skips. The gap
+widened from 40 tests to 43 while the broken job's output was byte-identical to the day before.
+This is the shape of the failure: **the two columns diverge over time and the broken one never
+signals that it is falling behind.**
 
 ---
 
@@ -122,9 +129,21 @@ ran `./coderunner` and reported never having seen the pulse.
 |---|---|---|
 | `_PulsingLine`, `PULSE_HALF_PERIOD_SEC`, `def processing` | **0** | **6** |
 
-The feature was never defective. Driven directly against a forced terminal it produces 9
-bright and 8 dim frames over 1.3 s, emits zero `\x1b[5m`, and settles correctly on exit —
-matching `f946142`'s own verification note. It had never been inside the container being run.
+**Corrected 2026-08-06.** This paragraph originally read *"The feature was never defective"*,
+on the strength of a forced-terminal run producing 9 bright and 8 dim frames over 1.3 s with
+zero `\x1b[5m`. That was wrong, and the way it was wrong matters more than the fact:
+
+The feature was defective **as well as** absent. `_PulsingLine` alternated the icon's *style*
+between `bold` and `dim`, and every icon the program uses is a colour emoji — which takes its
+colour from the font's glyph table and ignores SGR 1 and SGR 2 entirely. The escape codes were
+emitted flawlessly and the terminal showed a motionless line. So the frame counts above measure
+that bytes changed, not that anything was visible; they are retained here because a
+verification that proves the wrong proposition is worth recording as such.
+
+Two independent defects therefore had to be fixed before the pulse could be seen: the image did
+not contain the code (this criterion), and the code animated through an attribute the glyph
+ignores (fixed by blanking the icon rather than dimming it). Each alone was sufficient to
+produce the reported symptom, which is why the first fix appeared to work and did not.
 
 Three properties of this incident are what the criterion is shaped around:
 
@@ -273,7 +292,7 @@ a registry credential, or a token beyond the default read-scoped `GITHUB_TOKEN` 
 
 | Gate | Enforced by | Threshold |
 |---|---|---|
-| Test count | AC-1 | **282 passed, 0 skipped** |
+| Test count | AC-1 | **0 skipped**, pass count >= `MIN_PASSED` (285) |
 | Per-file coverage | `conftest.py:195-225` — **never restated in YAML** (N5) | `memory.py` 100%, `recall.py` 100%, `vectorstore.py` ≥ 85% (`conftest.py:187-192`) |
 | Lint | AC-4 | `ruff check .` reports zero findings, ruff **0.16.1** |
 | Formatting | AC-4 | **not gated**, by design |
