@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-import uuid  # T8(a) EXPERIMENT — unused import, F401. REVERT.
-
 import html
 import json
 import re

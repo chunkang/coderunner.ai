@@ -269,3 +269,11 @@ def remember_success(
         embedding=embedding,
     )
     return store.insert(record, cfg.max_records)
+
+
+# T8(b) EXPERIMENT — no test exercises this, so recall.py drops below its 100%
+# floor. Deliberate. REVERT.
+def _t8_experiment_uncovered(value: int) -> int:
+    if value > 0:
+        return value * 2
+    return -value
