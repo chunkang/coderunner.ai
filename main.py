@@ -237,6 +237,30 @@ def _render_markdown_line(line: str) -> Text:
 _PY_HIGHLIGHTER = Syntax("", "python", theme="monokai", background_color="default")
 
 
+# A left rail rather than a box. A box cannot be drawn around streaming output
+# at all — its bottom edge is unknown until the closing fence arrives, so the
+# block would have to be withheld until complete, which is exactly the
+# "it shows at once" failure. A rail needs no knowledge of where the block ends:
+# each line carries its own segment of it.
+# U+2588 FULL BLOCK — a solid bar, not a rule. The rail is the only thing
+# marking where a fenced block starts and stops, and it sits directly beside a
+# line of syntax colours, so a line-drawing character loses that contest: the
+# first attempt used a dim U+2502 and it disappeared, the second a bold U+2503
+# and it still read as thin, and a third U+258C half block which was closer but
+# still not solid. A block glyph is filled rather than stroked, which is what
+# actually makes it thick — and the full block is the end of that ladder.
+#
+# The ladder, all cell_len 1 so any of them is layout-neutral:
+#   │ U+2502 light   ┃ U+2503 heavy   ▎ U+258E quarter
+#   ▌ U+258C half    ▊ U+258A three-quarter   █ U+2588 full
+#
+# Weight now comes from the GLYPH, not the attribute: `bold` brightens a
+# stroked character but does almost nothing to a filled one. The style is kept
+# because several terminals do brighten the colour, and it costs nothing.
+_CODE_RAIL = "  █ "
+_CODE_RAIL_STYLE = "bold"
+
+
 def _render_code_line(line: str, number: int) -> Text:
     """One line of the generated script, numbered and syntax-highlighted.
 
@@ -251,6 +275,7 @@ def _render_code_line(line: str, number: int) -> Text:
     # too — the gutter's dim leaked onto every highlighted token and washed the
     # whole listing out.
     out = Text()
+    out.append(_CODE_RAIL, style=_CODE_RAIL_STYLE)
     out.append(f"{number:>4} ", style="dim")
     highlighted = _PY_HIGHLIGHTER.highlight(line)
     highlighted.rstrip()  # highlight() appends the newline pygments emitted
@@ -271,9 +296,16 @@ def _style_line(line: str, fence_depth: int, fence_lines: int, highlight_code: b
     Rendering the tail identically means nothing changes when a line completes.
     The text simply keeps flowing.
     """
-    if fence_depth:
-        return _render_code_line(line, fence_lines) if highlight_code else Text(line, style="dim")
-    return _render_markdown_line(line)
+    if not fence_depth:
+        return _render_markdown_line(line)
+    if highlight_code:
+        return _render_code_line(line, fence_lines)
+    # Unnumbered, but still railed: the reader still needs to see where the
+    # block starts and stops.
+    out = Text()
+    out.append(_CODE_RAIL, style=_CODE_RAIL_STYLE)
+    out.append(line, style="dim")
+    return out
 
 
 def _emit_line(
