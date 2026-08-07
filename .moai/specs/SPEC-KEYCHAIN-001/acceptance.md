@@ -515,17 +515,26 @@ rather than passing it by living somewhere else.
 
 ### Verification status
 
-| Criterion | Status | Discharged by |
+**Updated 2026-08-07, after `479d700`, `9226cc2` and `5ffdfed`.** 541 tests pass, 0 skipped;
+100.00% total coverage, `keychain.py` 100%; `ruff check .` clean. The table below is what that green
+suite does and does not mean. **Four criteria are only partly discharged, and the table says which
+half** — a criterion split across a source-level assertion and a live observation is not discharged
+by the half that runs without a daemon.
+
+The single fact governing every "not run" row: **the Docker daemon was not running on this host.**
+Nothing was substituted for it, and nothing below is inferred from a green suite.
+
+| Criterion | Status | Evidence, or what is missing |
 |---|---|---|
-| AC-EXPOSE | **not verified** — the `docker inspect` leak and the `/proc` routes are **measured** (2026-08-07); the feature that produces them is not built | T5, T10, T11 |
-| AC-SOURCE | **not verified** | T1, T3, T8 |
-| AC-POLICY | **not verified** | T3, T8 |
-| AC-DEGRADE | **not verified** — rc 44 and rc 128 are **measured**; the handling is not built | T5, T8 |
-| AC-TRANSPORT | **not verified** — the `--env-from-file` corruption and the `ps` visibility are **measured**; the transport is not wired | T5, T8, T10 |
-| AC-BOOT | **not verified** | T4, T5 |
-| AC-LAUNCH | **not verified** — the bash 3.2 array failure and both guards are **measured** | T5, T10 |
-| AC-IMAGE | **not verified**, and **currently failing**: `params.py` and `settings.py` are measured absent from the built image | T7 |
-| AC-DOCTOR | **not verified** | T6, T11 |
+| **AC-EXPOSE** | **partly discharged.** Documentation clause **discharged and automated**; live-observation clauses **not run** | Automated: `tests/test_launcher_source.py` asserts that no shipped document claims privacy, that `README.md` and `tech.md` §7.2 each name the `docker inspect` sink, and that the `never` interaction (§4.4) is stated. **Not run:** `docker inspect` was never observed printing the plaintext value; `/proc/1/environ` was never read as `runner`; `docker inspect` failing after `--rm` was never observed |
+| **AC-SOURCE** | **discharged.** | `tests/test_keychain.py` (`load()`, `prefill()`, the pop, the empty-value refusal, S3, S2, the case collision) and `tests/test_main_integration.py` at the seam: `ask` never invoked for a sourced name, `code` identity preserved, `pending` returned. N2 asserted against the prompt text |
+| **AC-POLICY** | **discharged, and observed red by mutation — twice, by two independent agents.** | Moving `_resolve_param_policy()` inside the `if asked:` branch produced exactly one failure while sixteen sibling keychain tests stayed green. **Under the mutation the output was still redacted**, so an effect-based assertion would have passed; the assertion on the call was the only thing that caught it |
+| **AC-DEGRADE** | **partly discharged.** The predicate, per-name isolation, the no-repair rule, the disable switch and the never-used-state line are **automated at source level**; the drift row was additionally **observed live**. The locked-keychain (rc 128) and cancelled-prompt rows were **not run** | `tests/test_launcher_source.py` for the source-level clauses. Live: deleting one item behind the launcher's back produced one yellow line naming it, still passed the other name, and left the registry unrepaired. `--set-secret` / `--list-secrets` / `--forget-secret` exercised against the real macOS keychain, every trace removed afterwards (all three items back to rc 44); O2's case-collision refusal returns rc 1 |
+| **AC-TRANSPORT** | **partly discharged.** Round-trip **discharged**; source clauses **discharged and automated**; the `ps -Ao args` clause **not run** | `sk-a$bc de#f "g" \h` stored to and fetched from the real macOS keychain **byte-identical, 19 characters**. Observed red first with `--env-from-file` spliced in — and that red exposed a defect in the test: the original whitespace tokenizer never matched `RUN_ENV+=(-e "…")`, so the check had been inspecting nothing. Now a regex, with a vacuity guard. **Not run:** `ps -Ao args` during a live session, for the same reason as AC-EXPOSE |
+| **AC-BOOT** | **discharged.** | A sentinel written to `$LOG_FILE` survived every secret subcommand, so `coderunner:157` is never reached — the assertion this criterion names. Dispatch before the bootstrap, the no-fall-through to `compose run`, and the `-w`-last store path are automated in `tests/test_launcher_source.py` |
+| **AC-LAUNCH** | **discharged locally under `/bin/bash` 3.2.57. NOT guaranteed under CI's bash 5** | Measured directly on 3.2.57: the guarded expansion gives `argc=0`, `rc=0`; the unguarded one gives `RUN_ENV[@]: unbound variable`, `rc=1`; `bash -n coderunner` parses. **The gap:** `tests/test_launcher_source.py` invokes bare `bash`, which is 3.2.57 here and 5.x on CI's Ubuntu runners, so the guard is not structurally guaranteed to be exercised under 3.2 in CI — the blind spot definition-of-done item 4 warns about, arriving through the test rather than the author's shell |
+| **AC-IMAGE** | **partly discharged.** Source-level clause **discharged and automated**; built-image clause **not run** | `tests/test_source_seam.py` derives the required module list from `main.py`'s own import block and asserts it against the `COPY` line, so the next module added fails a test instead of shipping missing. Observed red twice: once by shortening the `COPY` line, reproducing the historical defect exactly, and once naturally when `main.py` first imported the new module. **Not run:** no `docker compose build`, and no `import main` / `import params` / `import settings` / `import keychain` inside a built image — definition-of-done item 5. *`params.py` and `settings.py` were measured absent 2026-08-07 and are no longer: `fc19a07` added them* |
+| **AC-DOCTOR** | **asserted at source level, NEVER EXECUTED.** | `tests/test_launcher_source.py` asserts fourteen field labels, the preserved `printf` column, that the branch reads the registry and no stored value, and that it still exits before the run block. **The branch has never been run**, because `--doctor` sits after the whole bootstrap (`product.md` §6.4) and the daemon was down. Nobody has seen the fourteen fields printed |
 
 ### Definition of done
 

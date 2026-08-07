@@ -10,6 +10,75 @@ priority: "LOW"
 
 ## HISTORY
 
+### v1.0.0 partly verified (2026-08-07) — Implementation complete; status **stays `draft`**
+
+Implemented across `479d700` (feature), `9226cc2` (documentation) and `5ffdfed` (tests). Verified on
+Python 3.11.14: **541 tests passed, 0 failed, 0 skipped** (pytest, 9.72 s), **100.00% total coverage**
+over **843 statements with 0 missed**; `keychain.py` is **26 statements at 100%** and the per-file
+gate passed on all six gated modules. `ruff check .` reports **All checks passed**. `MIN_PASSED` at
+`.github/workflows/ci.yml` was raised **469 → 541** from a real `junitxml` run, not computed from an
+expected delta.
+
+**The version is unchanged and the status does not move.** Nothing in the specification was revised;
+what changed is the evidence behind it. `acceptance.md`'s definition of done has ten items and
+**three were never run** — item 2 (every criterion **observed** passing), item 5 (AC-IMAGE discharged
+by a real `docker compose build` followed by `import main` inside the resulting image) and item 6
+(T10's two end-to-end verifications). The Docker daemon was not running on this host and no
+substitute was attempted. `completed` on that evidence would be a claim this SPEC has not earned.
+
+**AC-POLICY was verified by mutation, twice, by two independent agents.** Moving
+`_resolve_param_policy()` back inside the `if asked:` branch produced **exactly one** failure —
+*"`settings.ensure_policy()` was never called on a zero-prompt turn"* — while sixteen sibling
+keychain tests stayed green. The part worth recording precisely: under the mutation **the output was
+still redacted**, so an effect-based assertion would have passed. The assertion on the call was the
+only thing that caught it. That is exactly what `acceptance.md` predicted, and it is now measured
+rather than argued.
+
+**AC-TRANSPORT round-tripped `sk-a$bc de#f "g" \h` through the real macOS keychain byte-identical, 19
+characters**, and was observed red first with `--env-from-file` spliced into the launcher. That red
+exposed a real defect in the **test** rather than in the launcher: the original whitespace tokenizer
+never matched `RUN_ENV+=(-e "…")` — splitting on whitespace yields the single token `RUN_ENV+=(-e` —
+so that check had been inspecting nothing, and would have passed against the one form the SPEC
+forbids. It is now a regex, with a vacuity guard so an empty match set fails instead of passing.
+
+**The rest, as measured.** **AC-BOOT:** a sentinel written to `$LOG_FILE` survived every secret
+subcommand, which is direct evidence that `coderunner:157` is never reached. **AC-LAUNCH / N8:**
+verified on stock `/bin/bash` **3.2.57** directly — the guarded expansion gives `argc=0`, `rc=0`; the
+unguarded one gives `RUN_ENV[@]: unbound variable`, `rc=1`; `bash -n coderunner` parses under 3.2.
+**AC-DEGRADE S5:** deleting one item behind the launcher's back produced one yellow line naming it,
+still passed the other name, and left the registry unrepaired. **AC-IMAGE** was observed red twice —
+once by shortening the `COPY` line, which reproduces the historical defect exactly, and once
+naturally, when `main.py` first imported the new module. `--set-secret`, `--list-secrets` and
+`--forget-secret` were each exercised against the real macOS keychain and every trace removed
+afterwards (all three items back to rc 44); O2's case-collision refusal returns rc 1.
+
+**What was not run, named as not run and not as not needed.**
+
+- **AC-IMAGE's container half.** No real `docker compose build`, and no `import main` /
+  `import params` / `import settings` / `import keychain` inside a built image. Only the
+  source-level clause is discharged. This is definition-of-done item 5, and item 5 exists precisely
+  because reading the `COPY` line was enough for everybody who looked at it last time.
+- **AC-EXPOSE's live half.** `docker inspect` was never observed printing the plaintext value,
+  `/proc/1/environ` was never read as `runner`, and `docker inspect` failing after `--rm` was never
+  observed. Only AC-EXPOSE's **documentation** clause is discharged — and that one is an executable
+  assertion in `tests/test_launcher_source.py`, not a review note.
+- **T10 end to end.** The full launcher → `compose run` → `os.environ` → prelude chain was never run
+  as one chain. Every link is tested; the joins between them are not.
+- **A known gap in the tests themselves.** `tests/test_launcher_source.py` invokes bare `bash`, which
+  resolves to 3.2.57 on this host and to 5.x on CI's Ubuntu runners. The N8 guard is therefore **not
+  structurally guaranteed** to be exercised under 3.2 in CI — the exact blind spot `acceptance.md`'s
+  definition of done item 4 warns about, arriving through the test rather than through the author's
+  shell. The honest fix is to parametrise over both interpreters where they are present; hard-coding
+  `/bin/bash` would make the check skip silently on Linux, which is the same failure by the other
+  door.
+
+**Two implementation judgement calls, recorded because neither is visible in the diff.**
+`keychain.py` duplicates the `"secret"` string literal rather than importing `params`, because
+`tests/test_source_seam.py` admits no first-party import in that module; the duplication is
+cross-checked by an assertion that `keychain.SECRET_TYPE == params.TYPE_SECRET`, so divergence fails
+a test instead of silently disabling sourcing. `ruff.toml` gained one `S603`/`S607` ignore scoped to
+`tests/test_launcher_source.py` alone, with the reason written where the ignore is.
+
 ### v1.0.0 (2026-08-07) — Initial specification
 
 Written to answer one question: **can private information be saved using only system libraries,
@@ -67,6 +136,15 @@ fault is latent only because the built image is itself stale — `/app/main.py` 
 the working tree's 1227 and contains no `import params`, which is `product.md` §6.3 exactly. The
 next rebuild produces an image that dies at import. This SPEC adds a third module to that same
 `COPY` line and therefore inherits the obligation to fix it (§7 item 6).
+
+**SUPERSEDED by `fc19a07` ("fix(docker): copy `params.py` and `settings.py` into the image"), which
+landed after the measurement above was taken.** The measurement stands: the omission was real, it had
+shipped, and `import params` inside `coderunner-ai:latest` did raise. What no longer stands is the
+obligation — the line is now `Dockerfile:43` and copies both modules, so this SPEC adds **one** name
+to it rather than three, and §7 item 6 is that much smaller. The reason for the finding is untouched:
+the list is hand-maintained, and a module in `main.py`'s imports but absent from that line still
+fails at **import**, inside a container that exits immediately, and still fails **late**, because
+`coderunner:163` builds only when the image is absent.
 
 ---
 
@@ -204,7 +282,7 @@ host, so the launcher's own environment is not exposed by `ps` here; on Linux
 | Precedent for launcher-only variables that never reach the container | `coderunner:17-18`; `tech.md` §4.1 rows for `CODERUNNER_DOCKER_BOOT_TIMEOUT` and `CODERUNNER_BOOTSTRAP_LOG` |
 | The run invocation to be amended, and why it is not `exec` | `coderunner:260-263` |
 | Docker-group membership is granted by the launcher itself | `coderunner:83-84` |
-| The image copies five modules and misses two | `Dockerfile:34` |
+| The image copies eight modules and misses none. ~~Five, missing two~~ — measured 2026-08-07 (§HISTORY), superseded by `fc19a07` and by this SPEC's own `keychain.py` | `Dockerfile:43` (`:34` when that measurement was taken) |
 | The container user and the chowned store directory | `Dockerfile:42-46` |
 | Declaration grammar and the `secret` type | `params.py:72-80`, `params.py:43-55` |
 | The `ask` seam this SPEC works with rather than around | `params.collect_values()` at `params.py:184-207`; `pending_declarations()` at `params.py:123-133` |
@@ -696,10 +774,14 @@ the second but not the first makes `cov.report(include=["keychain.py"])` raise, 
 direction for this mistake to fail in.
 
 **And a third edit, which is new to this SPEC and is the one this repository has already got wrong
-once.** `Dockerfile:34` copies five modules. `params.py` and `settings.py` are missing from it
-(measured, §HISTORY), so the next `docker compose build` produces an image whose `main.py` cannot
-import. `keychain.py` must be added to that line **and so must the two that are already missing**,
-or this SPEC ships a module that is not in the image that runs it.
+once.** `keychain.py` must be added to the `COPY` line at `Dockerfile:43`, or this SPEC ships a
+module that is not in the image that runs it.
+
+*As written, this paragraph required three names, not one: `params.py` and `settings.py` were
+measured absent from `coderunner-ai:latest` and `import params` inside it raised (§HISTORY).
+`fc19a07` added them after that measurement was taken. The sentence "has already got wrong once" is
+left standing because it is the whole reason for the edit — the omission cost a SPEC's worth of
+latency, and nothing about the mechanism that allowed it has changed.*
 
 `main.py`'s share stays wiring, per SPEC-INPUT-001 §5.3: it is not covered by any floor
 (`pytest.ini:50-54`, `conftest.py:200-206`), so every decision — which names are eligible, what a
