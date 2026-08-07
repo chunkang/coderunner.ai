@@ -125,9 +125,9 @@ Twenty user-visible behaviors, each mapped to the code that implements it.
 | 7 | **Session banner** — panel showing product name, active model, Ollama host, and execution timeout | `show_banner()` | `main.py:337-358` |
 | 8 | **Interactive REPL** — rule-separated turn loop, blank input skipped, `/exit`, `/quit`, `:q` terminate | `repl()` | `main.py:623-667`, exit words at `main.py:649` |
 | 9 | **Arrow-key prompt history** — readline wired for both GNU readline and macOS libedit, capped at 1000 entries, written back on exit via `atexit` | `_install_history()`, `_prompt_user()` | `main.py:585-612`, `main.py:615-620`, cap at `main.py:70` |
-| 10 | **Live streaming reasoning** — the model's tokens render incrementally as Markdown inside a bordered `Thought · attempt N` panel at 24 fps | `stream_llm()`, `render_stream()` | `main.py:178-190`, `main.py:193-207`, invoked at `main.py:472-476` |
+| 10 | **Live streaming reasoning** — tokens are printed one completed line at a time under a `Thought · attempt N` rule, never repainted; only the unfinished tail line stays in a `Live` region. Inline markdown (bold, italic, inline code) is rendered per line | `stream_llm()`, `render_stream()`, `_render_markdown_line()` | `main.py:179-192`, `main.py:323-`, `main.py:216-` |
 | 11 | **Dual protocol (CODE vs DIRECT)** — computational tasks produce a fenced Python block; conversational questions are answered directly with no execution | `SYSTEM_PROMPT` protocol spec; the "no code block" early return | `main.py:100-151`, branch at `main.py:479-482` |
-| 12 | **Generated-script display** — the extracted code is shown in a Monokai syntax panel with line numbers before it runs | `show_code()` | `main.py:302-310`, called at `main.py:484` |
+| 12 | **Live script display** — fenced code is numbered, Monokai-highlighted and marked with a solid left rail **as it is written**, inside the reasoning stream. There is no separate panel afterwards: `show_code()` was removed once the code streamed, because it re-showed lines the reader had just watched appear | `_render_code_line()`, `_CODE_RAIL` | `main.py:264-`, `main.py:260` |
 | 13 | **Sandboxed execution with wall-clock cap** — code is written to a fresh temp directory, run as a separate isolated-mode process, and the directory is destroyed unconditionally afterwards | `run_python()` | `main.py:244-286` |
 | 14 | **Execution result panel** — green `Execution OK (rc=N)` with stdout, red `Execution FAILED (rc=N)` with stderr, or red `Execution TIMEOUT` | `show_exec_result()` | `main.py:313-334` |
 | 15 | **Bounded agentic self-correction** — on failure, stderr+stdout are fed back and the model retries, up to `CODERUNNER_MAX_RETRIES` attempts per turn; on success a second LLM pass produces the grounded `Answer` | `agentic_turn()` | `main.py:427-541`; retry feedback `main.py:527-539`; grounded answer `main.py:492-508` |
@@ -144,7 +144,24 @@ Twenty user-visible behaviors, each mapped to the code that implements it.
   `_connection_help_panel()` (`main.py:553-570`). Exits with code 2 on failure
   (`main.py:628-629`).
 - **Status ticker** — emoji + `[TAG]` + message lines that narrate each phase of
-  the turn — `status()` (`main.py:294-299`).
+  the turn — `status()` (`main.py:503`).
+- **Pulsing status icon** — while a phase is running its icon blinks on and off,
+  then the line settles and stays steady; the animation lives in a transient
+  `Live` region that is erased on exit — `_PulsingLine` (`main.py:507`),
+  `processing()` (`main.py:555`). Applied to all five phases: memory search,
+  both model warm-ups, execution and capture.
+
+  The icon is **blanked**, not dimmed, and that is the whole mechanism. Every
+  icon is a colour emoji, which draws its colour from the font's own glyph
+  table and therefore ignores SGR 1 and SGR 2 entirely. The first
+  implementation alternated `bold` and `dim`, emitted a flawless alternating
+  escape stream, and animated nothing on any terminal — for the same reason its
+  own docstring rejected `\x1b[5m`. Presence and absence of a glyph is not an
+  attribute a terminal can decline to honour.
+- **Streaming that never repaints** — `prime_stream()` (`main.py:592`) draws
+  exactly one token inside the pulse so the animation covers the longest silence
+  in a turn (model load plus prompt evaluation) and ends when real output
+  starts.
 - **Signal safety** — SIGTERM prints a panel and exits 0
   (`_install_signal_handlers()`, `main.py:670-676`); Ctrl+C at the prompt exits
   the REPL (`main.py:642-644`); Ctrl+C mid-turn aborts only that turn

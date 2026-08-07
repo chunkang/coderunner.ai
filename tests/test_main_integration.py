@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -782,6 +783,35 @@ def _captured_console(monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
     return buf
 
 
+# Which ESCAPE CODE carries a colour is decided by the environment, and not by
+# anything a test can pin after the fact. main._PY_HIGHLIGHTER is a module-level
+# Syntax built at IMPORT time, so its theme is baked against whatever colour
+# system the console resolved to then: truecolor (\x1b[38;2;R;G;B) on a
+# developer machine with COLORTERM set, plain 16-colour (\x1b[91;49m) on a
+# GitHub runner with TERM unset. Re-pinning the console afterwards does not
+# change it — the Text already holds downgraded colours.
+#
+# So assertions here match ANY foreground colour: truecolor, 256, bright, or
+# standard. The claim under test is "this text is coloured", never "coloured
+# this particular way". The first version of this suite asserted \x1b[38;2;
+# and failed on its first ever CI run for exactly this reason.
+_ANY_FG_COLOUR = re.compile(r"\x1b\[(?:38;[25];|9[0-7]|3[0-7])")
+# A dim that has leaked onto coloured text: SGR 2 combined with a colour in one
+# sequence, in whatever encoding that colour happens to use.
+_DIM_ON_COLOUR = re.compile(r"\x1b\[2;\d")
+
+
+def _visible(raw: str) -> str:
+    """The text a human sees, with every ANSI sequence removed.
+
+    Syntax highlighting puts an escape sequence BETWEEN every pygments token,
+    so `import requests` never appears as a contiguous substring of the raw
+    stream even though it is exactly what the terminal draws. Assertions about
+    content belong here; assertions about styling belong on the raw bytes.
+    """
+    return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", raw)
+
+
 def _chunks(text: str, size: int = 3) -> Iterator[str]:
     """Split into small pieces, the way a real token stream arrives."""
     return iter([text[i : i + size] for i in range(0, len(text), size)])
@@ -850,3 +880,149 @@ def test_render_stream_tolerates_an_empty_stream(
 ) -> None:
     _captured_console(monkeypatch)
     assert main.render_stream("Thought", "cyan", iter([])) == ""
+
+
+# ------------------------------------------------------------------------------
+# Prompt — readline must be told which prompt bytes are invisible
+# ------------------------------------------------------------------------------
+
+
+def test_prompt_brackets_every_escape_sequence_for_readline() -> None:
+    """The prompt renders identically whether or not this holds. Only history breaks.
+
+    readline counts every unbracketed byte as a visible column, so the colour
+    escapes must sit inside \\001...\\002 (RL_PROMPT_START_IGNORE /
+    RL_PROMPT_END_IGNORE). Without them readline's idea of the cursor column is
+    eleven too far right, every redraw starts from the wrong origin, and
+    recalling an entry with Up appends to the current line instead of replacing
+    it.
+
+    Asserting on the rendered prompt would catch none of this — it looks correct
+    either way. The assertion has to be on what readline *counts*.
+    """
+    counted = re.sub("\001[^\002]*\002", "", main.PROMPT)
+
+    assert "\033" not in counted, (
+        "an escape sequence is outside \\001...\\002, so readline will count it "
+        "as visible columns and history navigation will corrupt the line"
+    )
+    assert counted == "you ➜ "
+
+
+# ------------------------------------------------------------------------------
+# Streaming render — inline markdown, and the fenced-block placeholder
+# ------------------------------------------------------------------------------
+#
+# The first line-by-line renderer printed lines verbatim, on the stated
+# reasoning that "little is lost in practice". The model's own replies
+# disproved that within one turn: they open with **CODE protocol** and close
+# with **Stop here.**, both of which reached the user as literal asterisks.
+
+
+def test_render_stream_renders_inline_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Asterisks must not survive to the terminal as text."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("**CODE protocol** and *soft* and `x = 1`\n"))
+    raw = buf.getvalue()
+
+    assert "**" not in raw
+    assert "CODE protocol" in raw
+    assert "\x1b[1m" in raw  # bold was actually emitted
+
+
+def test_render_stream_highlights_code_lines_as_they_arrive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The code must appear WHILE it is written, numbered and highlighted.
+
+    Its predecessor suppressed the block behind a placeholder to remove the
+    duplication with show_code(). That removed the duplication and the live
+    view with it: writing the script is the longest stretch of a turn, so it
+    became the one stretch with nothing on screen.
+    """
+    buf = _captured_console(monkeypatch)
+    reply = "before\n```python\nimport requests\nprint(1)\n```\nafter\n"
+    result = main.render_stream("T", "cyan", _chunks(reply), highlight_code=True)
+    raw = buf.getvalue()
+
+    seen = _visible(raw)
+    assert result == reply  # the RETURN value must stay complete; extraction needs it
+    assert "import requests" in seen
+    assert _ANY_FG_COLOUR.search(raw)  # pygments colour was actually emitted
+    assert "   1 " in seen and "   2 " in seen  # gutter numbering, restarting per block
+    assert "```" not in seen  # the fence markers themselves are not shown
+    assert "before" in seen and "after" in seen
+
+
+def test_render_stream_does_not_dim_the_highlighted_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the gutter is dim. Text(..., style=) sets a BASE style that leaks.
+
+    Building the line as Text(f"{n} ", style="dim") applies dim to everything
+    appended afterwards, washing out every pygments colour on the line. The
+    rendered result still looks like code, just uniformly faded, so nothing but
+    an assertion on the emitted attributes catches it.
+    """
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("```python\nimport requests\n```\n"),
+                       highlight_code=True)
+    raw = buf.getvalue()
+
+    assert "\x1b[2m" in raw  # the gutter IS dim
+    assert not _DIM_ON_COLOUR.search(raw)  # ...and the code is NOT, in any encoding
+
+
+def test_render_stream_leaves_code_plain_when_highlighting_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The final Answer streams without highlighting, but must still show code."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("Answer", "magenta", _chunks("see:\n```python\nprint(1)\n```\n"))
+    seen = _visible(buf.getvalue())
+    assert "print(1)" in seen
+    assert "   1 " not in seen  # no gutter outside the reasoning stream
+
+
+def test_render_stream_does_not_mistake_bold_for_italic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`**x**` must not be read as an emphasised `*x*` with stray asterisks."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("**bold**\n"))
+    raw = buf.getvalue()
+    assert "*" not in raw
+
+
+def test_in_flight_line_renders_exactly_as_it_will_settle() -> None:
+    """A line must not change costume when its newline arrives.
+
+    This is the "not natural" complaint, expressed as an assertion. When the
+    tail was rendered plain-and-dim while the settled line was numbered and
+    highlighted, every line visibly restyled at the instant it completed:
+    characters flowed in, then the finished line blinked into a different
+    appearance. That reads as lines being posted one at a time rather than as a
+    stream.
+
+    Asserting on the RENDERED output is the only way to catch it — both
+    versions display the correct text, and they differ only in styling.
+    """
+    for fence_depth, highlight in ((1, True), (1, False), (0, False)):
+        in_flight = main._style_line("import req", fence_depth, 1, highlight)
+        settled = main._style_line("import requests", fence_depth, 1, highlight)
+
+        # Same prefix, same spans over it: the tail is the settled line, shorter.
+        assert settled.plain.startswith(in_flight.plain)
+        assert [(s.start, s.style) for s in in_flight.spans if s.start == 0] == [
+            (s.start, s.style) for s in settled.spans if s.start == 0
+        ]
+
+
+def test_a_fence_marker_is_never_shown_even_half_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``` must not flash into view while the opening fence is being typed."""
+    buf = _captured_console(monkeypatch)
+    main.render_stream("T", "cyan", _chunks("x\n```python\nprint(1)\n```\n"),
+                       highlight_code=True)
+    assert "```" not in _visible(buf.getvalue())

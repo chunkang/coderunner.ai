@@ -52,52 +52,44 @@ Run `./coderunner --doctor` for a diagnostic report if anything misbehaves.
 A typical session looks like this:
 
 ```
-╭──────────────────────────────────────────────────────────╮
-│  CodeRunner.AI  — agentic Python interpreter powered by  │
-│                   LLaMA                                  │
-│  model: llama3.1:8b   host: http://ollama:11434          │
-│  timeout: 30s                                            │
-╰──────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────╮
+│                                                                    │
+│  CodeRunner.AI  — agentic Python interpreter powered by LLaMA      │
+│  model: llama3.1:8b   host: http://ollama:11434      timeout: 30s  │
+│                                                                    │
+╰────────────────────────────────────────────────────────────────────╯
 Type your task. Use /exit or Ctrl+C to quit.
 
 you ➜ What's the current weather in Seoul in Celsius?
 
 🔄 [LLaMA] Analyzing request and designing solution (attempt 1/3)…
+Thought · attempt 1 ──────────────────────────────────────────────────
+Task: fetch the current temperature in Seoul in °C.
 
-╭─ Thought · attempt 1 ────────────────────────────────────╮
-│  Task: fetch the current temperature in Seoul in °C.     │
-│                                                          │
-│  Thought: wttr.in exposes a JSON endpoint that returns   │
-│  the current condition in a stable schema. I'll hit      │
-│  https://wttr.in/Seoul?format=j1 with a short timeout    │
-│  and a User-Agent, parse current_condition[0].temp_C,    │
-│  and print it.                                           │
-╰──────────────────────────────────────────────────────────╯
+Thought: wttr.in exposes a JSON endpoint with a stable
+schema. I'll hit it with a short timeout and a User-Agent,
+parse current_condition[0].temp_C, and print it.
 
-╭─ Generated Script ───────────────────────────────────────╮
-│ 1  import requests                                       │
-│ 2  r = requests.get(                                     │
-│ 3      "https://wttr.in/Seoul?format=j1",                │
-│ 4      headers={"User-Agent": "CodeRunner.AI/1.0"},      │
-│ 5      timeout=10,                                       │
-│ 6  )                                                     │
-│ 7  r.raise_for_status()                                  │
-│ 8  temp_c = r.json()["current_condition"][0]["temp_C"]   │
-│ 9  print(f"Seoul is currently {temp_c}°C")               │
-╰──────────────────────────────────────────────────────────╯
-
-⚙️  [System] Running generated Python code…
-
-╭─ Execution OK (rc=0) ────────────────────────────────────╮
-│ Seoul is currently 4°C                                   │
-╰──────────────────────────────────────────────────────────╯
-
+  █    1 import requests
+  █    2 
+  █    3 r = requests.get(
+  █    4     "https://wttr.in/Seoul?format=j1",
+  █    5     headers={"User-Agent": "CodeRunner.AI/1.0"},
+  █    6     timeout=10,
+  █    7 )
+  █    8 r.raise_for_status()
+  █    9 temp_c = r.json()["current_condition"][0]["temp_C"]
+  █   10 print(f"Seoul is currently {temp_c}°C")
+──────────────────────────────────────────────────────────────────────
+⚙️ [System] Running generated Python code…
+╭─────────────────────── Execution OK (rc=0) ────────────────────────╮
+│ Seoul is currently 4°C                                             │
+╰────────────────────────────────────────────────────────────────────╯
 📊 [System] Execution successful (Output: Seoul is currently 4°C)
 💬 [LLaMA] Final response streaming…
-
-╭─ Answer ─────────────────────────────────────────────────╮
-│  It's currently **4 °C** in Seoul.                       │
-╰──────────────────────────────────────────────────────────╯
+Answer ───────────────────────────────────────────────────────────────
+Answer: it's currently 4 °C in Seoul.
+──────────────────────────────────────────────────────────────────────
 ```
 
 If the first script fails, CodeRunner feeds the stderr back to the model, which diagnoses the problem and emits a corrected block — up to `CODERUNNER_MAX_RETRIES` attempts per turn.

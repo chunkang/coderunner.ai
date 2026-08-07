@@ -88,9 +88,9 @@ banner comments:
 | **Configuration** | 47-60 | Five environment-derived constants (`:51-55`), `HISTORY_MAX = 1000` (`:56`), `TOOLS_MODULE` path (`:58`), the `console` singleton (`:60`) |
 | `SYSTEM_PROMPT` | 63-114 | The full agent contract: CODE vs DIRECT protocol selection (`:67-70`), CODE rules and library list (`:72-99`), DIRECT rules (`:101-106`), post-execution answer instruction (`:108-109`), failure-diagnosis instruction (`:111-112`) |
 | **Data model** | 117-133 | `@dataclass Conversation` with `messages: list[dict]` and the `system()` / `user()` / `assistant()` appenders (`:122-133`) |
-| **LLM streaming** | 136-163 | `stream_llm()` — yields content deltas from `client.chat(..., stream=True)` (`:141-146`); `render_stream()` — accumulates tokens into a `Live` Markdown `Panel` at `refresh_per_second=24` and returns the joined text (`:149-163`) |
+| **LLM streaming** | 136-163 | `stream_llm()` — yields content deltas from `client.chat(..., stream=True)` (`:141-146`); `render_stream()` — prints each COMPLETED line once and never repaints it, keeping only the unfinished tail in a `Live` at `refresh_per_second=12`; renders inline markdown per line and, with `highlight_code=True`, numbers and highlights fenced code behind a solid rail. Helpers: `_render_markdown_line()`, `_render_code_line()`, `_style_line()`, `_emit_line()` |
 | **Code extraction & execution** | 166-242 | `CODE_BLOCK_RE` (`:171`); `extract_last_python_block()` returning the **last** match (`:174-176`); `SCRIPT_HEADER` prepended to every generated script (`:179-188`); `@dataclass ExecResult` with `ok/stdout/stderr/timed_out/returncode` (`:191-197`); `run_python()` (`:200-242`) |
-| **Status renderers** | 245-314 | `status()` icon+tag+message line (`:250-255`); `show_code()` Monokai `Syntax` panel with line numbers (`:258-266`); `show_exec_result()` green/red panel incl. the TIMEOUT title (`:269-290`); `show_banner()` (`:293-314`) |
+| **Status renderers** | 245-314 | `status()` icon+tag+message line (`:250-255`); `show_exec_result()` green/red panel incl. the TIMEOUT title (`:269-290`); `show_banner()` (`:293-314`) |
 | **Agentic loop** | 317-379 | `agentic_turn()` — the whole turn state machine (`:322-379`) |
 | **Entry point** | 382-512 | `build_client()` (`:387-388`); `_connection_help_panel()` (`:391-408`); `preflight()` (`:411-420`); `_install_history()` (`:423-450`); `_prompt_user()` (`:453-458`); `repl()` (`:461-495`); `_install_signal_handlers()` (`:498-504`); `if __name__ == "__main__"` guard (`:507-512`) |
 
@@ -99,11 +99,11 @@ banner comments:
 ```mermaid
 flowchart TD
     A["conv.user(user_input)<br/>main.py:323"] --> B{"attempt in 1..MAX_RETRIES<br/>main.py:325"}
-    B --> C["stream_llm + render_stream<br/>'Thought · attempt N' panel<br/>main.py:327-331"]
+    B --> C["stream_llm + render_stream<br/>'Thought · attempt N' stream<br/>line by line, no repaint"]
     C --> D["conv.assistant(thought)<br/>main.py:332"]
     D --> E["extract_last_python_block<br/>main.py:334"]
     E -->|"None"| F["DIRECT protocol:<br/>streamed text IS the answer<br/>return — main.py:335-338"]
-    E -->|"code"| G["show_code + run_python<br/>main.py:339-343"]
+    E -->|"code"| G["run_python<br/>(the code was already shown,<br/>highlighted, as it streamed)"]
     G --> H["show_exec_result<br/>main.py:345"]
     H -->|"result.ok"| I["inject STDOUT as synthetic<br/>USER message + 'provide the<br/>final Answer' — main.py:350-354"]
     I --> J["second LLM pass -> 'Answer' panel<br/>conv.assistant(answer); return<br/>main.py:356-363"]
@@ -236,7 +236,7 @@ functions, none of which need a live model:
 | `ExecResult` construction | `main.py:191-197` | Field-mapping assertions against `subprocess.CompletedProcess` |
 
 Harder to test as currently written, because they are coupled to the global
-`console` and to a live `ollama.Client`: `render_stream()` (`main.py:149-163`),
+`console` and to a live `ollama.Client`: `render_stream()` (`main.py:323-`),
 `agentic_turn()` (`main.py:322-379`), `repl()` (`main.py:461-495`).
 `agentic_turn()` takes its client as a parameter, so it is fake-able, but its
 retry bound reads the module-level `MAX_RETRIES` constant (`main.py:54`,

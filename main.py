@@ -196,8 +196,140 @@ def stream_llm(client: ollama.Client, messages: list[dict]) -> Iterator[str]:
 # whole growing panel.
 STREAM_REFRESH_PER_SEC = 12
 
+# Only the markdown constructs that OPEN AND CLOSE ON ONE LINE can be rendered
+# by a renderer that never revisits a line. That is the whole constraint here,
+# and it is not a limitation of the regex: a fenced block or a table is not
+# renderable until its closing delimiter arrives, and waiting for that is what
+# forces whole-document re-rendering and the flicker with it.
+#
+# Bold before italic, and the italic branch refuses a neighbouring asterisk, so
+# `**x**` is never mistaken for an emphasised `*x*`.
+_INLINE_MD_RE = re.compile(
+    r"\*\*(?P<bold>[^*]+)\*\*"
+    r"|(?<!\*)\*(?P<italic>[^*\s][^*]*)\*(?!\*)"
+    r"|`(?P<code>[^`]+)`"
+)
 
-def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
+_FENCE_RE = re.compile(r"^\s*```")
+
+
+def _render_markdown_line(line: str) -> Text:
+    """Style the inline markdown in one line. Anything else is passed through."""
+    out = Text()
+    pos = 0
+    for match in _INLINE_MD_RE.finditer(line):
+        out.append(line[pos : match.start()])
+        if match.group("bold") is not None:
+            out.append(match.group("bold"), style="bold")
+        elif match.group("italic") is not None:
+            out.append(match.group("italic"), style="italic")
+        else:
+            out.append(match.group("code"), style="bold cyan")
+        pos = match.end()
+    out.append(line[pos:])
+    return out
+
+
+# `background_color="default"` is not cosmetic. Without it every highlighted
+# line carries monokai's own dark background, which paints a ragged block behind
+# each line as it arrives — the lines have different lengths, so the result
+# looks like torn paper rather than a code listing.
+_PY_HIGHLIGHTER = Syntax("", "python", theme="monokai", background_color="default")
+
+
+# A left rail rather than a box. A box cannot be drawn around streaming output
+# at all — its bottom edge is unknown until the closing fence arrives, so the
+# block would have to be withheld until complete, which is exactly the
+# "it shows at once" failure. A rail needs no knowledge of where the block ends:
+# each line carries its own segment of it.
+# U+2588 FULL BLOCK — a solid bar, not a rule. The rail is the only thing
+# marking where a fenced block starts and stops, and it sits directly beside a
+# line of syntax colours, so a line-drawing character loses that contest: the
+# first attempt used a dim U+2502 and it disappeared, the second a bold U+2503
+# and it still read as thin, and a third U+258C half block which was closer but
+# still not solid. A block glyph is filled rather than stroked, which is what
+# actually makes it thick — and the full block is the end of that ladder.
+#
+# The ladder, all cell_len 1 so any of them is layout-neutral:
+#   │ U+2502 light   ┃ U+2503 heavy   ▎ U+258E quarter
+#   ▌ U+258C half    ▊ U+258A three-quarter   █ U+2588 full
+#
+# Weight comes from the GLYPH, not the attribute: `bold` brightens a stroked
+# character but does almost nothing to a filled one. The colour is what the
+# attribute is for here.
+#
+# `bright_green` is a NAMED ANSI colour, deliberately, not a hex triple. A
+# truecolor value degrades unpredictably — the colour system is resolved from
+# the environment, and CI has already produced one failure that way (a runner
+# with TERM unset renders in 16 colours). One of the sixteen standard colours
+# renders as itself everywhere, including in the container, which sets
+# TERM=xterm-256color at Dockerfile:11-23.
+_CODE_RAIL = "  █ "
+_CODE_RAIL_STYLE = "bold bright_green"
+
+
+def _render_code_line(line: str, number: int) -> Text:
+    """One line of the generated script, numbered and syntax-highlighted.
+
+    Highlighting a line in isolation is imperfect by construction — a string
+    literal or a bracket left open on a previous line is not visible from here,
+    so pygments occasionally colours a continuation wrongly. That is accepted:
+    the alternative is withholding the code until its closing fence arrives,
+    which is precisely the "it appears all at once" complaint this replaced.
+    """
+    # Text() then append(style=...), NOT Text(..., style="dim"). The latter sets
+    # a BASE style on the object, which applies to everything appended after it
+    # too — the gutter's dim leaked onto every highlighted token and washed the
+    # whole listing out.
+    out = Text()
+    out.append(_CODE_RAIL, style=_CODE_RAIL_STYLE)
+    out.append(f"{number:>4} ", style="dim")
+    highlighted = _PY_HIGHLIGHTER.highlight(line)
+    highlighted.rstrip()  # highlight() appends the newline pygments emitted
+    out.append_text(highlighted)
+    return out
+
+
+def _style_line(line: str, fence_depth: int, fence_lines: int, highlight_code: bool) -> Text:
+    """Render one line exactly as it will finally appear.
+
+    Used for BOTH the in-flight tail and the permanent print, and that is the
+    whole reason it exists as a function. When the two differed — the tail plain
+    and dim, the settled line numbered and coloured — every line visibly changed
+    costume at the instant its newline arrived. Characters would flow in, then
+    the finished line would blink into a different style. It read as stilted,
+    line-at-a-time output rather than as a stream, which is what it is.
+
+    Rendering the tail identically means nothing changes when a line completes.
+    The text simply keeps flowing.
+    """
+    if not fence_depth:
+        return _render_markdown_line(line)
+    if highlight_code:
+        return _render_code_line(line, fence_lines)
+    # Unnumbered, but still railed: the reader still needs to see where the
+    # block starts and stops.
+    out = Text()
+    out.append(_CODE_RAIL, style=_CODE_RAIL_STYLE)
+    out.append(line, style="dim")
+    return out
+
+
+def _emit_line(
+    line: str, fence_depth: int, fence_lines: int, highlight_code: bool
+) -> tuple[int, int]:
+    """Print one completed line, tracking fenced-block state. Returns the new state."""
+    if _FENCE_RE.match(line):
+        return (0, 0) if fence_depth else (1, 0)
+    if fence_depth:
+        fence_lines += 1
+    console.print(_style_line(line, fence_depth, fence_lines, highlight_code))
+    return fence_depth, fence_lines
+
+
+def render_stream(
+    title: str, style: str, token_iter: Iterator[str], *, highlight_code: bool = False
+) -> str:
     """Print the model's reply one completed line at a time, never repainting it.
 
     The predecessor wrapped a growing ``Panel(Markdown(...))`` in a ``Live`` and
@@ -214,17 +346,33 @@ def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
     first newline would show nothing at all while producing it, which is the
     "it is doing something but showing nothing" complaint in another costume.
 
-    **The cost is markdown rendering, and it is a real cost.** A fenced code
-    block cannot be rendered a line at a time — the fence is only meaningful as
-    a pair — so lines are printed verbatim. Little is lost in practice: the
-    extracted code is separately syntax-highlighted by ``show_code()``, and what
-    is left here is prose. Restoring markdown means restoring whole-document
-    re-rendering, and with it the flicker; do not do one without the other.
+    Inline markdown IS rendered, per line, by ``_render_markdown_line``. The
+    first version of this function printed lines verbatim on the reasoning that
+    "little is lost in practice"; that was wrong, and the model's own replies
+    disproved it immediately — it opens with ``**CODE protocol**`` and closes
+    with ``**Stop here.**``, both of which reached the user as literal asterisks.
+
+    ``highlight_code`` numbers and syntax-highlights the lines inside a fenced
+    block as they arrive. Its predecessor did the opposite — suppressed the
+    block behind a "… 15 lines of code, shown below …" placeholder, on the
+    grounds that ``show_code()`` re-rendered it below and the duplication was
+    waste. That removed the duplication and took the live view with it: writing
+    the script is the LONGEST stretch of a turn, and it became the one stretch
+    with nothing on screen, after which finished code appeared all at once.
+
+    So the code streams and the separate panel is gone. What was two renderings
+    of the same lines — one live and plain, one final and highlighted — is now
+    one that is both.
     """
-    console.print(Rule(title, style=style, align="left"))
+    # Text(), not the bare string: Rich's automatic highlighter picks numbers
+    # out of a plain str, so "Thought · attempt 1" rendered its digit in a
+    # different colour to the words beside it.
+    console.print(Rule(Text(title), style=style, align="left"))
 
     buffer: list[str] = []
     pending = ""
+    fence_depth = 0
+    fence_lines = 0
     with Live(Text(""), console=console, refresh_per_second=STREAM_REFRESH_PER_SEC,
               transient=True) as live:
         for token in token_iter:
@@ -233,13 +381,27 @@ def render_stream(title: str, style: str, token_iter: Iterator[str]) -> str:
             # A token can carry several newlines, or none.
             while "\n" in pending:
                 line, pending = pending.split("\n", 1)
-                console.print(Text(line))
-            live.update(Text(pending))
+                fence_depth, fence_lines = _emit_line(
+                    line, fence_depth, fence_lines, highlight_code
+                )
+            # The tail is rendered EXACTLY as it will settle (see _style_line).
+            # It is what makes this read as a stream rather than as lines being
+            # posted one at a time: characters flow into a line that already
+            # carries its gutter number and its colours, and completing it
+            # changes nothing on screen.
+            #
+            # A fence marker is never shown, so a tail that is opening one stays
+            # blank until its newline flips the state.
+            live.update(
+                Text("")
+                if _FENCE_RE.match(pending)
+                else _style_line(pending, fence_depth, fence_lines + 1, highlight_code)
+            )
 
     # The stream can end mid-line; the Live region was transient, so that tail
     # has just been erased and has to be reprinted as permanent output.
     if pending:
-        console.print(Text(pending))
+        fence_depth, fence_lines = _emit_line(pending, fence_depth, fence_lines, highlight_code)
     console.print(Rule(style=style))
     return "".join(buffer)
 
@@ -449,15 +611,15 @@ def prime_stream(tokens: Iterator[str]) -> Iterator[str]:
     return itertools.chain((first,), tokens)
 
 
-def show_code(code: str) -> None:
-    console.print(
-        Panel(
-            Syntax(code, "python", theme="monokai", line_numbers=True, word_wrap=True),
-            title="Generated Script",
-            border_style="magenta",
-            padding=(0, 1),
-        )
-    )
+# `show_code()` stood here and rendered the extracted block in a bordered
+# "Generated Script" panel after the reasoning had finished streaming. It is
+# gone because render_stream(highlight_code=True) now numbers and highlights
+# those same lines as they arrive, so the panel showed the reader nothing they
+# had not just watched appear — twice the vertical space for one listing.
+#
+# Restoring it means the code is on screen twice again. If a static, complete,
+# word-wrapped view is ever wanted back, it belongs behind an explicit choice
+# rather than on every turn.
 
 
 def show_exec_result(result: ExecResult) -> None:
@@ -653,6 +815,10 @@ def agentic_turn(
             title=f"Thought · attempt {attempt}",
             style="cyan",
             token_iter=thought_tokens,
+            # The script is numbered and highlighted AS IT ARRIVES, which is
+            # why no Generated Script panel follows: the reader has already
+            # watched these lines being written.
+            highlight_code=True,
         )
         conv.assistant(thought)
 
@@ -661,7 +827,6 @@ def agentic_turn(
             status("💬", "LLaMA", "No code produced — returning direct answer.", "yellow")
             return
 
-        show_code(code)
         with processing("⚙️", "System", "Running generated Python code…", "yellow"):
             result = run_python(code)
 
@@ -792,12 +957,28 @@ def _install_history() -> None:
     atexit.register(_save)
 
 
+# readline counts EVERY byte of the prompt as one visible column unless it is
+# bracketed by \001 (RL_PROMPT_START_IGNORE) and \002 (RL_PROMPT_END_IGNORE).
+#
+# Unbracketed, the eleven bytes of colour escape here are counted as eleven
+# columns, so readline believes the cursor sits eleven columns to the right of
+# where it is. Every redraw is then computed from a wrong origin — and a redraw
+# is exactly what Up and Down do. Recalling an entry erases the wrong span, so
+# the recalled text appears appended to whatever was already on the line
+# instead of replacing it. The bug is invisible until the user presses an arrow
+# key, which is why a prompt that looks perfect can still be wrong.
+#
+# The brackets are the fix and they are not decoration: remove them and the
+# history navigation breaks again, silently, while the prompt still renders
+# correctly.
+PROMPT = "\001\033[1;32m\002you\001\033[0m\002 ➜ "
+
+
 def _prompt_user() -> str:
     """Read a line with arrow-key history. Rich handles the banner/rendering;
     the actual input() call is what gives us readline's line-editing."""
     console.file.flush()
-    # Bright-green prompt, ANSI directly so readline sees a clean terminal.
-    return input("\033[1;32myou\033[0m ➜ ")
+    return input(PROMPT)
 
 
 def repl() -> None:
