@@ -82,7 +82,7 @@ jobs:
   #  This runs on the HOST, not in the container, and that reverses what
   #  pytest.ini:6-14 documents as the supported invocation. The reversal is
   #  measured, not assumed (SPEC-CI-001 F1): installing both requirements files
-  #  on a bare 3.11 host yields 282 passed / 0 skipped, with vectorstore.py's
+  #  on a bare 3.11 host yielded 282 passed / 0 skipped at authoring (285 today), with vectorstore.py's
   #  suite running against a REAL embedded Milvus Lite on tmp_path. The image
   #  buys no coverage the host does not already produce, and would cost three
   #  accommodations for the uid-1000 mismatch (see the `image` job).
@@ -233,7 +233,7 @@ jobs:
         # and a skip is green.
         #
         #     broken:  242 passed, 1 skipped   -> exit 0
-        #     working: 282 passed, 0 skipped   -> exit 0
+        #     working: 285 passed, 0 skipped   -> exit 0
         #
         # So the assertion is on the COUNTS, not the exit status (AC-1).
         #
@@ -250,8 +250,9 @@ jobs:
         #                  alone would report nothing.
         #
         # MIN_PASSED is a floor, not an equality: adding tests must not fail the
-        # build. Raise it when the suite grows. 282 measured 2026-08-05 on
-        # Python 3.11.14 (SPEC-CI-001 AC-1).
+        # build. Raise it when the suite grows. 285 measured 2026-08-06 on
+        # Python 3.11.14 (SPEC-CI-001 AC-1) — 282 at authoring, plus three from
+        # the pulse-blanking fix.
         #
         # This step is NOT a second coverage gate (N5) — it reads no coverage
         # figure and restates no floor. It counts tests.
@@ -262,7 +263,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 282
+          MIN_PASSED = 285
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

@@ -37,6 +37,7 @@ from pathlib import Path
 
 import httpx
 import ollama
+from rich.cells import cell_len
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
@@ -314,16 +315,35 @@ def status(icon: str, tag: str, message: str, style: str = "cyan") -> None:
 
 
 class _PulsingLine:
-    """A status line whose icon alternates bright and dim while work is running.
+    """A status line whose icon blinks on and off while work is running.
 
     Rich re-invokes ``__rich__`` on every refresh of a Live region, so the phase
     is derived from the clock rather than from mutation — no timer thread, and
     no state to reset between uses.
 
-    This is a redraw pulse, deliberately not the ANSI blink attribute
-    (``\\x1b[5m``, which Rich will happily emit as ``style="blink"``). iTerm2,
-    VS Code's terminal and Windows Terminal all ignore that code, so on the
-    machines this project actually runs on it would animate nothing at all.
+    **The icon is blanked, not dimmed, and that is the entire point.** Every
+    icon this program passes in is a colour emoji (``🔄``, ``🧠``, ``⚙️``,
+    ``💬``), and a colour emoji draws its colour from the font's own glyph
+    table. SGR 1 (bold) and SGR 2 (faint) adjust the *foreground colour
+    intensity* of a text glyph, so against an emoji they are honoured and
+    change nothing whatsoever.
+
+    The first implementation of this class dimmed the icon. It emitted a
+    flawless alternating stream of ``\\x1b[1m`` and ``\\x1b[2m``, passed a test
+    asserting exactly that, and animated nothing on any terminal — the very
+    failure the paragraph below was written to avoid, reached by a different
+    route. It went unnoticed for a day. Presence and absence of a glyph is not
+    an attribute a terminal can decline to honour, which is why the animation
+    now lives in the text rather than in a style.
+
+    Note also what the test for that bug must use: the ``*`` the original test
+    passed as an icon is a *text* glyph, for which bold and dim work perfectly.
+    A test of this class is only meaningful with a real emoji.
+
+    Still deliberately not the ANSI blink attribute (``\\x1b[5m``, which Rich
+    will happily emit as ``style="blink"``). iTerm2, VS Code's terminal and
+    Windows Terminal all ignore that code, so on the machines this project
+    actually runs on it would animate nothing at all.
     """
 
     def __init__(self, icon: str, tag: str, message: str, style: str) -> None:
@@ -334,9 +354,11 @@ class _PulsingLine:
 
     def __rich__(self) -> Text:
         lit = int(time.monotonic() / PULSE_HALF_PERIOD_SEC) % 2 == 0
-        return _status_line(
-            self.icon, self.tag, self.message, self.style, "bold" if lit else "dim"
-        )
+        # cell_len, not len: an emoji occupies two terminal columns while being
+        # one or two code points, and a single space would drag the rest of the
+        # line leftwards on every dark frame.
+        icon = self.icon if lit else " " * cell_len(self.icon)
+        return _status_line(icon, self.tag, self.message, self.style)
 
 
 @contextmanager

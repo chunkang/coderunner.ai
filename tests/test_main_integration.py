@@ -26,6 +26,8 @@ pytest.importorskip("rich", reason="main.py needs rich; run in-container")
 pytest.importorskip("ollama", reason="main.py needs ollama; run in-container")
 pytest.importorskip("httpx", reason="main.py needs httpx; run in-container")
 
+from rich.cells import cell_len
+
 import main
 import memory
 from conftest import make_record
@@ -605,35 +607,105 @@ def test_the_memory_config_is_shared_not_re_read_per_turn() -> None:
 # ------------------------------------------------------------------------------
 
 
-def icon_style(line: Any) -> str:
-    """The style applied to the icon, which is the first span of a status line."""
-    return str(line.spans[0].style)
+# `icon_style()` used to live here, reading the style of a status line's first
+# span. It is deliberately gone: every assertion it served was an assertion that
+# a STYLE alternated, which is exactly the thing that turned out to prove
+# nothing against a colour emoji. Reintroducing it would make the same class of
+# test easy to write again.
 
 
-def test_pulsing_line_alternates_the_icon_between_bright_and_dim(
+# Every production call site passes a colour emoji, so every test here must
+# too. The original suite passed "*" — a TEXT glyph, for which bold and dim
+# work perfectly — and so asserted a mechanism that was inert in the only
+# context that ships. Using a real emoji is what makes these tests mean
+# anything; do not "simplify" it back to an ASCII placeholder.
+PULSE_ICON = "🔄"
+
+
+def test_pulsing_line_blinks_the_icon_on_and_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The pulse is derived from the clock, so __rich__ alone proves the beat."""
+    """The pulse is derived from the clock, so __rich__ alone proves the beat.
+
+    The assertion is on the GLYPH, not on a style. A colour emoji ignores SGR 1
+    and SGR 2 entirely, so an assertion that the icon's style alternates
+    bold/dim passes while the terminal shows a motionless line — which is
+    precisely what happened.
+    """
     clock = {"now": 0.0}
     monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
-    pulse = main._PulsingLine("*", "LLaMA", "thinking", "cyan")
+    pulse = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan")
 
     clock["now"] = 0.0
-    assert icon_style(pulse.__rich__()) == "bold"
+    assert PULSE_ICON in pulse.__rich__().plain
     clock["now"] = main.PULSE_HALF_PERIOD_SEC
-    assert icon_style(pulse.__rich__()) == "dim"
+    assert PULSE_ICON not in pulse.__rich__().plain
     clock["now"] = main.PULSE_HALF_PERIOD_SEC * 2
-    assert icon_style(pulse.__rich__()) == "bold"
+    assert PULSE_ICON in pulse.__rich__().plain
+
+
+def test_pulsing_line_never_animates_through_a_style_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two frames must differ in TEXT, not merely in styling.
+
+    This is the regression guard. Any future implementation that goes back to
+    varying an attribute on the icon — bold, dim, colour, blink — will render
+    identically on a colour emoji and must fail here rather than ship.
+    """
+    clock = {"now": 0.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    pulse = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan")
+
+    clock["now"] = 0.0
+    lit = pulse.__rich__()
+    clock["now"] = main.PULSE_HALF_PERIOD_SEC
+    dark = pulse.__rich__()
+
+    assert lit.plain != dark.plain
+
+
+def test_pulsing_line_holds_its_width_so_the_text_does_not_shift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A double-width emoji blanked to ONE space would jitter the line leftwards.
+
+    The blank is cell_len(icon) spaces for that reason, and cell_len is what
+    the terminal actually measures — `len("🔄")` is 1 while it occupies 2
+    columns, so a naive len() would still jitter.
+    """
+    clock = {"now": 0.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    pulse = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan")
+
+    clock["now"] = 0.0
+    lit = pulse.__rich__()
+    clock["now"] = main.PULSE_HALF_PERIOD_SEC
+    dark = pulse.__rich__()
+
+    assert cell_len(lit.plain) == cell_len(dark.plain)
+    # And the guard is only meaningful because the two differ in code points:
+    assert len(lit.plain) != len(dark.plain) or cell_len(PULSE_ICON) == 1
 
 
 def test_pulsing_line_carries_the_same_text_as_a_settled_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Only the icon's brightness differs; the wording must not shift mid-pulse."""
+    """The lit frame and the settled line must be identical; wording cannot shift."""
     monkeypatch.setattr(main.time, "monotonic", lambda: 0.0)
-    pulsing = main._PulsingLine("*", "LLaMA", "thinking", "cyan").__rich__()
-    settled = main._status_line("*", "LLaMA", "thinking", "cyan")
+    pulsing = main._PulsingLine(PULSE_ICON, "LLaMA", "thinking", "cyan").__rich__()
+    settled = main._status_line(PULSE_ICON, "LLaMA", "thinking", "cyan")
     assert pulsing.plain == settled.plain
+
+
+def test_every_pulsed_icon_in_main_is_wider_than_zero_cells() -> None:
+    """Guards the blanking arithmetic against an icon cell_len cannot measure.
+
+    If an icon ever measures 0 columns the dark frame would be a zero-length
+    blank and the line would jitter, silently, exactly as before.
+    """
+    for icon in ("🔄", "🧠", "⚙️", "💬", "📊"):
+        assert cell_len(icon) > 0
 
 
 def test_processing_settles_into_one_permanent_line(status_lines: list[dict]) -> None:
