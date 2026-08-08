@@ -112,7 +112,7 @@ sandboxing note at `README.md:116`.
 
 ## 4. Core features
 
-Twenty user-visible behaviors, each mapped to the code that implements it.
+Twenty-one user-visible behaviors, each mapped to the code that implements it.
 
 | # | Feature | Implementation | Location |
 | --- | --- | --- | --- |
@@ -120,7 +120,7 @@ Twenty user-visible behaviors, each mapped to the code that implements it.
 | 2 | **Silent Docker install** — installs Docker Desktop (macOS, Homebrew cask then DMG fallback) or Docker Engine (Linux, `get.docker.com`) when the binary is missing | `install_docker_macos()`, `install_docker_linux()`, `ensure_docker_installed()` | `coderunner:37-71`, `coderunner:73-86`, `coderunner:88-99` |
 | 3 | **Headless daemon start** — starts a stopped Docker daemon and polls until ready (default 180 s budget) | `wait_for_docker()`, `start_docker_macos()`, `start_docker_linux()`, `ensure_docker_running()` | `coderunner:104-143` |
 | 4 | **Bundled model server + one-time model pull** — brings up the Ollama sidecar, waits for `healthy`, pulls the model only if absent from the volume | `ensure_ollama_service()`; `ollama` and `model-pull` services | `coderunner:191-217`, `docker-compose.yml:15-49` |
-| 5 | **Diagnostic report** — `./coderunner --doctor` prints 12 fields (OS/arch, docker binary, docker version, compose command, daemon reachability, image presence, ollama service status, pulled models, ollama volume mountpoint, **app volume mountpoint**, **embedding model presence**, bootstrap log path) and exits 0 | `--doctor` branch | `coderunner:233-258` |
+| 5 | **Diagnostic report** — `./coderunner --doctor` prints 14 fields (OS/arch, docker binary, docker version, compose command, daemon reachability, image presence, ollama service status, pulled models, ollama volume mountpoint, **app volume mountpoint**, **embedding model presence**, bootstrap log path, **keychain backend**, **stored secret names and count**) and exits 0. The last two report names only, never a value | `--doctor` branch | `coderunner:233-258` |
 | 6 | **Automatic teardown** — on exit/INT/TERM, removes stray app containers and stops the Ollama sidecar to reclaim RAM while preserving the model volume | `cleanup()` + `trap ... EXIT INT TERM` | `coderunner:222-231` |
 | 7 | **Session banner** — panel showing product name, active model, Ollama host, and execution timeout | `show_banner()` | `main.py:337-358` |
 | 8 | **Interactive REPL** — rule-separated turn loop, blank input skipped, `/exit`, `/quit`, `:q` terminate | `repl()` | `main.py:623-667`, exit words at `main.py:649` |
@@ -136,6 +136,7 @@ Twenty user-visible behaviors, each mapped to the code that implements it.
 | 18 | **Zero-cost cold start** — on an empty store the embedding call is skipped entirely, so a fresh install pays no extra latency on its first turn | empty-store short-circuit in `recall_for_task()` | `recall.py:109-169` |
 | 19 | **`/memory` command family** — `/memory` (path, counts, embed model, dimension, on-disk size, effective threshold/top-k/cap), `/memory list [n]`, `/memory forget <id>`, `/memory clear --yes`. Handled in the REPL; `agentic_turn()` is never invoked | `handle_memory_command()` and its `_emit_*` helpers | `memory.py:447-494`, `memory.py:497-567`; dispatch at `main.py:652` |
 | 20 | **One-line degradation** — any memory fault (embedding backend down, store unopenable, volume unwritable, another session holding the store) produces exactly one status line and a turn otherwise identical to the pre-feature product | `retrieval_degraded()` classifier + the warning-suppression pair | `recall.py:172-202`, `main.py:384-391`, `main.py:444-446`, `main.py:515-523` |
+| 21 | **Host-keychain secrets for declared parameters** — `--set-secret NAME` keeps a value in the macOS keychain or the Linux Secret Service; the launcher fetches every registered name before the container starts and passes it as `-e CODERUNNER_SECRET_<NAME>` (name only), and a `# @param NAME : secret` is filled without prompting. `--list-secrets` and `--forget-secret` manage the set; all three run before the bootstrap, so storing a password does not install Docker. Eligibility is `type == secret` only, the turn's own cache always wins, and every fault degrades to a prompt with one yellow line. **This moves the exposure rather than removing it — see 6.13** | `keychain.load()`/`keychain.prefill()`; the launcher's keychain section and `keychain_collect_env()` | `keychain.py`, `main.py:_collect_params()`, `coderunner:36-…`, `coderunner:263` |
 
 ### Supporting behaviors
 
@@ -363,6 +364,76 @@ a second *launcher* run collides on the container name first; the exposed path
 is `docker compose run --rm coderunner`, which sets no name. There is no
 queueing, no lock wait, and no `busy_timeout` equivalent — the SQLite design had
 one, and this is a deliberate regression accepted with the substrate.
+
+### 6.13 A keychain-stored secret is readable by anyone who can query the Docker daemon
+
+Feature 21 stores a value in the host's credential store so the user stops
+retyping it, and the launcher then passes it into the container's environment.
+**That does not make the value private. It moves the exposure**, and this section
+exists so the move is stated rather than implied.
+
+Measured 2026-08-07:
+
+```
+$ docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' <id> | grep -i secret
+MY_SECRET=hunter2
+
+$ docker exec <id> sh -c 'tr "\0" "\n" < /proc/1/environ | grep -i secret; id'
+MY_SECRET=hunter2
+uid=1000(runner) gid=1000(runner) groups=1000(runner)
+```
+
+Neither route is a property of *how* the value is passed — `-e NAME`,
+`-e NAME=value` and `--env-from-file` all produce the same `Config.Env` record.
+It is a property of the container having an environment. `main.py` pops every
+`CODERUNNER_SECRET_*` variable out of `os.environ` at import, which was measured
+to close the `os.environ` route for scripts started by `run_python()` and
+measured **not** to close either `/proc` route. That is a mitigation with a
+stated ceiling, not a fix.
+
+What this removes, retained and adds:
+
+- **Removed** — the repetition. The value is typed once, into the operating
+  system, rather than once per session into a terminal in front of whoever is
+  looking at it.
+- **Retained** — generated code can read it, and must: it is the value the script
+  was written to use. That was already true of a typed value.
+- **Added** — the Docker daemon. Access to it is already root-equivalent on the
+  host and this project grants that access itself (`coderunner:83-84` adds the
+  invoking user to the `docker` group), so the marginal exposure is small. It is
+  not zero, and on a shared Linux machine the `docker` group can be wider than
+  the person who stored the key. Also added: the host keychain itself, which is a
+  store no capture policy inspects — that one is intentional and is the entire
+  point, listed so that "nothing was stored" is never said about a session that
+  used this feature.
+
+The container is `--rm`, so the `Config.Env` record is destroyed with the
+container. It is transient. It is not absent.
+
+**And one existing promise changes meaning.** The `never` capture policy is still
+the strongest available, and for a keychain-sourced value it no longer bounds the
+exposure: "this turn was not stored" stays true and stops being complete. A user
+who chose `never` is told so, in `README.md` and in `tech.md` §7.2.
+
+A user who needs a secret the Docker daemon cannot see should not use this
+feature. Typing it at the prompt still routes it through `getpass`, keeps it out
+of readline history, out of the rendered script and — under `sensitive_excluded`
+or `never` — out of solution memory.
+
+### 6.14 The launcher has no tests, and it just grew
+
+Feature 21 adds roughly forty lines of bash to a file that has never had a test
+of any kind, and two of its sharpest edges live there: the empty-array expansion
+that is fatal under `set -u` on stock macOS `/bin/bash` 3.2.57, and the
+"rc 0 **and** non-empty" predicate that decides whether a value is trusted.
+
+`tests/test_launcher_source.py` asserts what can be asserted about the text —
+that `--env-from-file` is absent, that every `-e` carries a bare name, that the
+array expansion is guarded, that the subcommands are dispatched before the
+bootstrap, and that `--doctor` prints no stored value. It cannot assert
+behaviour. A harness is deliberately out of scope: a test framework introduced
+as a rider on a `LOW`-priority feature is a framework nobody maintains. If the
+launcher grows again, it should be its own piece of work.
 
 ---
 

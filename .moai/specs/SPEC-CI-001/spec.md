@@ -1,14 +1,86 @@
 ---
 id: SPEC-CI-001
-version: "1.0.1"
+version: "1.0.2"
 status: "draft"
 created: "2026-08-05"
-updated: "2026-08-05"
+updated: "2026-08-07"
 author: "Chun Kang"
 priority: "HIGH"
 ---
 
 ## HISTORY
+
+### v1.0.2 (2026-08-07) — the `image` job's file list becomes a gate; citations corrected
+
+Three changes, one of which is a scope amendment and two of which are corrections to claims that
+had gone stale in this document while the code moved underneath it.
+
+**The hole, and why §5 moved to close it.** `ci.yml:456-458` warned in plain words that a file
+added to `Dockerfile:43` and not to the workflow's `FILES=` list "can go stale unobserved". The
+next day, `479d700` did exactly that with `keychain.py` — the module that reads the user's
+credential store. An **absent** module fails the build loudly; a **stale** one builds, imports,
+and passes every check the `image` job runs, which is F2 reopened for one file. §5 now admits
+`tests/test_source_seam.py` so the invariant is enforced by a test that asserts **set equality**
+between the two lists and reports the symmetric difference by side. The full argument, including
+why a test about `.github/` does not breach the boundary the original §5 was drawing, is at
+**§5.1**. The test was observed failing against the seven-file list before the fix; `FILES=` and
+the in-image import smoke now both carry `keychain.py`.
+
+**Citations corrected, and the sweep stated exactly.** Four files were swept: **`spec.md`,
+`plan.md`, `acceptance.md` and `.github/workflows/ci.yml`.** The first draft of this entry said
+"this SPEC, `plan.md` and `acceptance.md`", which omitted `ci.yml` and so read as a completeness
+claim that was not complete — the same defect one level up. `ci.yml` carried five stale
+`conftest.py` citations of its own and they are corrected in the same change.
+
+The gate has moved down `conftest.py` twice since v1.0.0 and every line reference to it in those
+four files was wrong: `PER_FILE_COVERAGE_TARGETS` is at **`conftest.py:204-212`** (cited as
+`:187-192`), the `pytest_sessionfinish` hook at **`:215-245`** (cited as `:195-225`), the emitted
+line `Per-file coverage gate passed` at **`:245`** (cited as `:225`), and the
+`coverage unavailable` branch at **`:227-229`** (cited as `:206-209`).
+
+`479d700` also inserted a comment block into the `Dockerfile`, moving the `COPY` line from `:34`
+to **`:43`** and everything below it. All four swept files cited `:34` — seven times here, three
+in `plan.md`, two in `acceptance.md`, five in `ci.yml` — and all now cite `:43`. **None of those
+seventeen was a historical measurement:** each describes the current design, or the `479d700`
+incident itself, at which point `:43` was already the correct line. Two genuinely historical
+citations were therefore *not* rewritten — `tests/test_source_seam.py`'s AC-IMAGE comment, which
+now names both the old and current line, and `verification-T3.md` §2.3, which cites
+`git show b8b3259:Dockerfile` line 34 and is correct **for that ref**.
+
+Corrected in the same pass, each verified against the file rather than assumed. In `ci.yml`:
+`Dockerfile:42-46` → **`:51-55`**, `Dockerfile:48` → **`:57`**, `main.py:802` → **`:1295`**,
+`tests/test_main_integration.py:25-27` → **`:29-31`**, `coderunner:163` → **`:462`**. In
+`tests/test_source_seam.py`: two further `coderunner:163` → **`:462`**, both pre-existing and
+both stating the build-if-absent rule in the present tense.
+
+**Known-wrong citations left standing, because they are outside this SPEC's scope to edit** —
+recorded so the next reader does not trust them, and so that fixing them needs no re-derivation:
+
+| Cites | Correct | Where |
+|---|---|---|
+| `conftest.py:221-223` for `coverage unavailable` | `conftest.py:227-229` | `pytest.ini:45` |
+| `Dockerfile:42-46` for the uid-1000 block | `Dockerfile:51-55` | `spec.md:241` (§2.3), `spec.md:275` (§3.2); `plan.md:124` (§3.2), `plan.md:153` (R4) |
+| `tests/test_main_integration.py:25-27` for the `importorskip` guards | `:29-31` | `spec.md:116` (F1), `spec.md:341` (N3); `plan.md:137` (§3.3); `acceptance.md:54` (AC-1) |
+| `coderunner:163` for the build-if-absent rule | `coderunner:462` | `spec.md:82` (HISTORY v1.0.1), `spec.md:135` (F2); `acceptance.md:114`, `:157` (AC-2) |
+
+The last two rows carry a wrinkle worth naming rather than smoothing: several of those sites sit
+inside **historical** passages — F2's incident, AC-2's motivating evidence — where the cited line
+may well have been correct when the measurement was taken. But each states its claim in the
+**present tense** (*"`coderunner:163` builds only when `docker image inspect` fails"*), so a
+reader today follows the number and lands on nothing. Whoever fixes them should decide per site
+whether to repoint or to mark as superseded; this entry deliberately does not pre-empt that.
+
+**Two enumerations replaced by the sets they were copying.** `T3` asserted **three** coverage
+floors; `conftest.py:204-212` now declares **six**. `T3` now asserts *every floor declared in
+`PER_FILE_COVERAGE_TARGETS`, whatever that set currently is* — the same set-derived form as the
+seam test above, for the same reason. Likewise the `MIN_PASSED` literal is deleted from
+`plan.md` T3 and from `acceptance.md` AC-1 and its gates table; **AC-1 had been restating the
+number inside the very sentence asserting it is "held in exactly one place"**, which is N5
+violated by the criterion that cites N5. It is now cited by symbol only.
+
+**What is unchanged.** No requirement, no acceptance criterion's Given/When/Then, no threshold,
+no job design. `S3` and `AC-1` still enumerate three floors in prose; they are left as written
+because this amendment's remit was `T3`, and they are flagged rather than silently widened.
 
 ### v1.0.1 (2026-08-05) — F2 promoted from measurement to incident; hashes marked historical
 
@@ -42,7 +114,7 @@ rather than revising it. T3, T5 and T8 remain deferred and unverified.
 Written against `tech.md` §8.3 ("No CI"), which is the gap this SPEC closes and which states
 the case better than a restatement would: *"A gate that exists, passes locally, and is never
 executed by anything but a human is one commit away from being decorative."* SPEC-MEMORY-001
-delivered a substantial test suite and a **per-file** coverage gate (`conftest.py:187-225`),
+delivered a substantial test suite and a **per-file** coverage gate (`conftest.py:204-245`),
 and nothing runs either of them automatically.
 
 Three findings shaped the design, and two of them changed it:
@@ -140,9 +212,11 @@ by a user.
 This SPEC **detects** drift. It does not prevent it. Pinning, lockfiles and digests are
 `tech.md` §8.5's problem and are deliberately left there (§6 item 3).
 
-Nothing here changes product behaviour. No first-party module is edited, no gate threshold
-moves, and the only file outside `.github/` that this SPEC may touch is `requirements-dev.txt`,
-to pin the linter.
+Nothing here changes product behaviour. No first-party module is edited and no gate threshold
+moves. Two files outside `.github/` may be touched: `requirements-dev.txt`, to pin the linter,
+and `tests/test_source_seam.py`, to assert that the `image` job's file lists still agree with
+`Dockerfile:43`. The second was added by amendment on 2026-08-07 and its justification is at
+§5.1 — it is a test **about** `.github/`, not a change to the tree being measured.
 
 ## 2. Verified environment
 
@@ -177,7 +251,7 @@ a reason to avoid it — see `plan.md` R3.
 | `uvx ruff format --check .` reports **8 files would be reformatted** | measured 2026-08-05 — the project has **deliberately declined** the formatter |
 | The image runs as **uid/gid 1000** (`runner`) | `Dockerfile:42-46` |
 | Image size | **754 MB** on disk, 172 MB content |
-| Build layer order already favours caching | `Dockerfile:31-32` install requirements **before** `Dockerfile:34` copies source |
+| Build layer order already favours caching | `Dockerfile:31-32` install requirements **before** `Dockerfile:43` copies source |
 | Remote | `git@github.com:chunkang/coderunner.ai.git` |
 | Git mode | `git-strategy.yaml` — `mode: personal`, `main_branch: main`, `auto_pr: false` |
 | `.github/workflows/` | exists and is **empty**. `tech.md:635`'s "`.github/` does not exist" is **stale** and is corrected by T9 |
@@ -199,14 +273,14 @@ Two workflow files. Three jobs. Each answers a different question, and none answ
 6. `pytest`
 
 The coverage gate is **not** re-expressed here. It lives in `pytest_sessionfinish`
-(`conftest.py:195-225`) with its floors at `conftest.py:187-192`, and the workflow's only
+(`conftest.py:215-245`) with its floors at `conftest.py:204-212`, and the workflow's only
 relationship to it is invoking `pytest` and honouring the exit status.
 
 ### 3.2 Job 2 — `image` (in `.github/workflows/ci.yml`)
 
 1. `docker compose build coderunner` (`docker-compose.yml:58-62`), with `type=gha` layer cache
 2. `docker run --rm --entrypoint python coderunner-ai:latest -c "import main, memory, recall, vectorstore, tools"`
-3. Hash-compare the five files that `Dockerfile:34` copies into `/app` against the checkout
+3. Hash-compare the five files that `Dockerfile:43` copies into `/app` against the checkout
 
 It **deliberately does not run pytest**. F1 makes an in-container run redundant, and the cost
 is not zero: the image runs as uid 1000 (`Dockerfile:42-46`) while the runner's checkout is
@@ -245,7 +319,7 @@ All five EARS requirement types are represented.
 | # | Requirement |
 |---|---|
 | **U1** | The pipeline **shall always** run on **Python 3.11**, matching the runtime pin at `Dockerfile:9` and ruff's `target-version = "py311"` (`ruff.toml:10`). A CI interpreter that differs from the shipped one tests a product nobody runs. |
-| **U2** | The pipeline **shall always** enforce the per-file coverage floors through the **existing** `pytest_sessionfinish` hook (`conftest.py:195-225`) and its `PER_FILE_COVERAGE_TARGETS` (`conftest.py:187-192`), by invoking `pytest` and honouring its exit status. There **shall** be exactly one source of truth for those thresholds, and it is `conftest.py`. |
+| **U2** | The pipeline **shall always** enforce the per-file coverage floors through the **existing** `pytest_sessionfinish` hook (`conftest.py:215-245`) and its `PER_FILE_COVERAGE_TARGETS` (`conftest.py:204-212`), by invoking `pytest` and honouring its exit status. There **shall** be exactly one source of truth for those thresholds, and it is `conftest.py`. |
 | **U3** | The pipeline **shall always** declare `permissions: contents: read` and **shall** consume no secrets, no tokens beyond the default read-scoped `GITHUB_TOKEN`, and no registry credentials. |
 | **U4** | Every job **shall always** be reproducible by a human from a single documented command run against a clean checkout. A step whose failure cannot be reproduced locally is a step that will be disabled the first time it is inconvenient. |
 
@@ -256,7 +330,7 @@ All five EARS requirement types are represented.
 | **E1** | **WHEN** a commit is pushed to `main`, **THEN** the pipeline **shall** run the `test` job and the `image` job. |
 | **E2** | **WHEN** a pull request targeting `main` is opened or updated, **THEN** the pipeline **shall** run the same two jobs, with the same steps and the same thresholds. |
 | **E3** | **WHEN** dependency installation completes, **THEN** the `test` job **shall**, *before invoking pytest*, import `rich`, `ollama`, `httpx`, `pymilvus` and `milvus_lite`, and **shall** fail the job naming the missing package if any import fails. This is the sole defence against F1's silent-skip mode. |
-| **E4** | **WHEN** the image build completes, **THEN** the `image` job **shall** (a) run `python -c "import main, memory, recall, vectorstore, tools"` inside the image with `--entrypoint python`, and (b) compare the SHA-256 of each of the five files at `/app` — the exact set named at `Dockerfile:34` — against the corresponding file in the checkout, failing on any mismatch. |
+| **E4** | **WHEN** the image build completes, **THEN** the `image` job **shall** (a) run `python -c "import main, memory, recall, vectorstore, tools"` inside the image with `--entrypoint python`, and (b) compare the SHA-256 of each of the five files at `/app` — the exact set named at `Dockerfile:43` — against the corresponding file in the checkout, failing on any mismatch. |
 | **E5** | **WHEN** the weekly schedule fires, **THEN** the `canary` job **shall** resolve all dependencies with `--upgrade` and no cache, write the resolved versions to `$GITHUB_STEP_SUMMARY`, and run the full suite. |
 | **E6** | **WHEN** a new run supersedes an in-flight run in the same concurrency group, **THEN** the older run **shall** be cancelled **only if** `github.event_name == 'pull_request'`. |
 
@@ -266,7 +340,7 @@ All five EARS requirement types are represented.
 |---|---|
 | **S1** | **WHILE** the pip cache key matches the current `requirements.txt` **and** `requirements-dev.txt`, the `test` job **shall** restore the cache. Any change to either file **shall** invalidate it. |
 | **S2** | **WHILE** the `canary` job is running, caching **shall** be disabled and resolution **shall** use `--upgrade`. A cache hit in the canary defeats the canary. |
-| **S3** | **IF** any of `memory.py`, `recall.py` or `vectorstore.py` reports coverage below its floor (`conftest.py:187-192`) — **including** the `coverage unavailable` branch at `conftest.py:206-209`, which fires when a gated file produced no data at all — **THEN** the job **shall** fail. "No data" is a stronger failure than "low percentage", not a lesser one. |
+| **S3** | **IF** any of `memory.py`, `recall.py` or `vectorstore.py` reports coverage below its floor (`conftest.py:204-212`) — **including** the `coverage unavailable` branch at `conftest.py:227-229`, which fires when a gated file produced no data at all — **THEN** the job **shall** fail. "No data" is a stronger failure than "low percentage", not a lesser one. |
 | **S4** | **IF** `ruff check .` reports any finding, **THEN** the job **shall** fail. The baseline is **zero** (measured 2026-08-05 with ruff 0.16.1), so any finding is a regression rather than a backlog item. |
 
 ### 4.4 Unwanted — shall not
@@ -284,7 +358,7 @@ All five EARS requirement types are represented.
 
 | # | Requirement |
 |---|---|
-| **O1** | **Where** GitHub Actions layer caching is available, the `image` job **should** use `type=gha` cache. `Dockerfile:31-32` already orders the expensive `pip install` before the source `COPY` at `Dockerfile:34`, so warm builds should re-run only the copy. |
+| **O1** | **Where** GitHub Actions layer caching is available, the `image` job **should** use `type=gha` cache. `Dockerfile:31-32` already orders the expensive `pip install` before the source `COPY` at `Dockerfile:43`, so warm builds should re-run only the copy. |
 | **O2** | **Where** the canary runs, it **should** write the resolved dependency versions to `$GITHUB_STEP_SUMMARY` on success **and** on failure. A failing canary with no version list is a puzzle; with one, it is a diff. |
 | **O3** | **Where** a coverage summary can be surfaced in the job summary, it **should** be — as **reporting only**. It **shall never** become a second gate (see N5). |
 | **O4** | **Where** gRPC noise pollutes the host job's log, `GRPC_VERBOSITY=NONE` and `GLOG_minloglevel=3` **should** be set on the `test` job, matching `Dockerfile:22-23`. The C-core writes beneath Python's logging module, so nothing in `vectorstore.py` can suppress it. |
@@ -298,7 +372,50 @@ All five EARS requirement types are represented.
 3. A pin for **`ruff==0.16.1`**, so the lint gate cannot flap under a linter release.
 4. The **preflight import assertion** in the `test` job (E3) — the one genuinely new piece of
    verification logic this SPEC introduces.
-5. Documentation: `tech.md` §8.3, `product.md` §6.3, and a CI section in `README.md`.
+5. `tests/test_source_seam.py` — assertions that the `image` job's hand-maintained file lists
+   still agree with `Dockerfile:43`. **Added by amendment 2026-08-07; see below.**
+6. Documentation: `tech.md` §8.3, `product.md` §6.3, and a CI section in `README.md`.
+
+### 5.1 Why item 5 exists, and why it required amending this section
+
+The original §5 permitted `.github/` and `requirements-dev.txt`, on the reasoning that a CI SPEC
+that edits the tree it is meant to be measuring has stopped being a CI SPEC. That reasoning
+holds, and item 5 is not an exception to it: the file admitted is a **test**, it asserts a
+property **of `.github/workflows/ci.yml`**, and it changes no product behaviour, no threshold and
+no first-party module. It is the `image` job's own correctness expressed where correctness can be
+checked, rather than in the job it is a property of.
+
+What forced the amendment is that the invariant in question was already written down, in the
+right place, in plain words, and was violated anyway. `ci.yml:456-458` says of the `FILES=` list:
+
+> *If that COPY line changes, change this list — a file added there and not here is a file that
+> can go stale unobserved.*
+
+That comment was written 2026-08-06. On **2026-08-07**, commit `479d700` added `keychain.py` to
+`Dockerfile:43` and not to `FILES=` — **the exact omission the comment names, within one day, on
+the file it names.** The pattern had been followed correctly for `params.py` and `settings.py`
+and was missed for the one module that reads the user's credential store.
+
+The asymmetry is what makes it worth a test rather than a firmer comment. A file **absent** from
+the image fails the build immediately, because `main.py` cannot import it. A file **stale** in
+the image builds, imports, and passes every check the `image` job runs — which is F2 exactly,
+reopened for one module. An unlisted file is not half-protected; it is precisely as unprotected
+as it was before this SPEC existed.
+
+**Converting an invariant enforced by a comment into an invariant enforced by a gate is what this
+SPEC is for.** `tech.md` §8.3's sentence — *"a gate that exists, passes locally, and is never
+executed by anything but a human is one commit away from being decorative"* — applies with more
+force to a gate that was never executed by anything at all. The scope boundary as written would
+have required leaving the hole open or closing it in a way that could reopen silently; neither is
+a defensible reading of a SPEC whose subject is exactly this failure mode. So the boundary moves,
+by one file, on the record, with the counterexample attached.
+
+The test derives both lists rather than restating either — it reuses the existing
+`Dockerfile`-COPY parser in that file and parses `FILES=` and the import-smoke module list out of
+`ci.yml`, then asserts **set equality** and reports the symmetric difference by side. A second
+parser, or a third hand-maintained list, would be the same defect one level up. It also carries a
+vacuity guard: a regex that matches nothing would make the assertion permanently green, which is
+worse than no assertion because it is counted.
 
 ## 6. Out of scope
 
@@ -336,9 +453,10 @@ All five EARS requirement types are represented.
 | Requirements | this file, §4 (U1–U4, E1–E6, S1–S4, N1–N6, O1–O4) |
 | Task decomposition, dependency graph, risks | `.moai/specs/SPEC-CI-001/plan.md` |
 | Acceptance criteria | `.moai/specs/SPEC-CI-001/acceptance.md` |
-| The gate being protected | `conftest.py:187-225`, `pytest.ini:38-45` |
+| Verification record for T3 | `.moai/specs/SPEC-CI-001/verification-T3.md` |
+| The gate being protected | `conftest.py:204-245`, `pytest.ini:38-45` |
 | Artefacts to be created | `.github/workflows/ci.yml`, `.github/workflows/canary.yml` |
-| Artefact possibly amended | `requirements-dev.txt` (ruff pin, T1) |
+| Artefacts possibly amended | `requirements-dev.txt` (ruff pin, T1); `tests/test_source_seam.py` (the `image` job's file lists, §5 item 5 / §5.1) |
 | Documentation to be corrected | `tech.md` §8.3 (`tech.md:633-647`), `product.md` §6.3 (`product.md:246-251`), `README.md` |
 | Source under specification | `Dockerfile`, `docker-compose.yml`, `conftest.py`, `pytest.ini`, `ruff.toml`, `requirements.txt`, `requirements-dev.txt` |
 | Project context | `.moai/project/product.md`, `.moai/project/structure.md`, `.moai/project/tech.md` |

@@ -148,6 +148,49 @@ One case worth naming: Milvus Lite does not support concurrent access. A second 
 
 ---
 
+## Host-keychain secrets
+
+When the model needs a value only you have, it declares it — `# @param api_key: secret = "API key"` — and CodeRunner asks you for it. If you use the same API key every session, you can keep it in your operating system's credential store instead and stop retyping it.
+
+```bash
+./coderunner --set-secret api_key      # the OS prompts for the value and masks it
+./coderunner --list-secrets            # names and a count, never a value
+./coderunner --forget-secret api_key   # remove it
+```
+
+At the next launch the launcher fetches every registered name and passes it into the container. A `# @param NAME : secret = "…"` whose name matches is filled without prompting; every other declaration prompts exactly as it does today. Only `secret` declarations are eligible — store `city` and you will still be asked for it, because the model declared it `str`.
+
+The store is `security` on macOS and `secret-tool` (libsecret) on Linux. **No Python dependency is added** — the launcher is bash, and those commands ship with the operating system. The value never appears in a command line on the way in: `security` and `secret-tool` read it themselves, so it does not pass through the launcher at all.
+
+The three subcommands run before the Docker bootstrap, so storing a password does not install Docker. `CODERUNNER_KEYCHAIN=0` disables the feature for one launch without deleting anything. `./coderunner --doctor` reports which backend is in use and which names are registered.
+
+### What this does and does not buy you
+
+> `./coderunner --set-secret` keeps a value in your operating system's credential store instead of
+> in your fingers. While a session is running, that value is present in the container's environment,
+> where **anyone able to query the Docker daemon can read it in plaintext with `docker inspect`**,
+> and where the generated code that needs it can read it — as it must. The container is `--rm`, so
+> the record is destroyed when the session ends.
+>
+> This feature does **not** make a secret private. It removes the need to retype it and it adds a
+> reader: the Docker daemon. Docker-daemon access is already root-equivalent on the host, so the
+> marginal exposure is small — and it is not zero.
+>
+> If you need a secret that the Docker daemon cannot see, do not use this feature. Type it at the
+> prompt, where CodeRunner already routes it through `getpass` and keeps it out of readline
+> history, out of the rendered script, and — under the `sensitive_excluded` or `never` capture
+> policies — out of solution memory.
+
+One consequence deserves stating on its own, because it changes what an existing promise means. `never` — the capture policy for people who want a guarantee rather than a reduction — is still the strongest policy available, and for a keychain-sourced value **it no longer bounds the exposure**: the value is in the container's `Config.Env` for the whole session regardless of which policy you chose, because that is outside the store any capture policy governs. "This turn was not stored" remains true. It is no longer complete.
+
+### When it breaks
+
+Every keychain fault ends in a prompt and never in a failure. No keychain client on `PATH`, a locked keychain, a name you registered whose item has since been deleted, a cancelled unlock dialog, an item that exists but is empty — each produces **one yellow line at launch** and then behaves exactly as CodeRunner did before this feature: you are asked for the value. One unreadable name does not stop the others.
+
+A user who has never run `--set-secret` gets no line at all. That is a state, not a fault.
+
+---
+
 ## Files
 
 | File | Purpose |
@@ -157,6 +200,9 @@ One case worth naming: Milvus Lite does not support concurrent access. A second 
 | `memory.py` | Solution memory core — record model, truncation, config parsing, `/memory` commands, prompt-block formatting. Stdlib only |
 | `recall.py` | The embedding seam — the only module that touches `ollama` for embeddings |
 | `vectorstore.py` | The storage seam — the only module that touches `pymilvus` |
+| `params.py` | Declared-parameter grammar, collection and literal safety. Stdlib only |
+| `settings.py` | `settings.json` and the parameter capture policy. Stdlib only |
+| `keychain.py` | Reads the values the launcher fetched from the host keychain. Stdlib only, and it contains no platform knowledge at all — that lives in the launcher |
 | `tools.py` | Stdlib-only helpers importable from generated scripts (e.g. `web_search`) |
 | `Dockerfile` | Slim Python 3.11 image running as unprivileged user |
 | `docker-compose.yml` | Three-service stack: ephemeral `coderunner`, long-lived `ollama`, and the one-shot `model-pull` helper, plus the `coderunner_app_data` and `coderunner_ollama_data` volumes |

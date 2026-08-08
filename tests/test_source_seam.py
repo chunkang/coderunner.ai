@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -27,7 +28,16 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 #: The first-party product modules. `.claude/` and `.moai/` are agent tooling
 #: and are not product code; `conftest.py` and `tests/` are the harness.
-FIRST_PARTY = ("main.py", "memory.py", "recall.py", "tools.py", "vectorstore.py")
+FIRST_PARTY = (
+    "keychain.py",
+    "main.py",
+    "memory.py",
+    "params.py",
+    "recall.py",
+    "settings.py",
+    "tools.py",
+    "vectorstore.py",
+)
 
 
 def parse(name: str) -> ast.Module:
@@ -143,6 +153,399 @@ def test_no_first_party_module_imports_numpy(name: str) -> None:
     seam — quietly stops being the only place vector maths happens.
     """
     assert "numpy" not in imported_roots(parse(name))
+
+
+def test_params_and_settings_and_keychain_import_only_stdlib() -> None:
+    """SPEC-INPUT-001 spec.md 5.2, extended by SPEC-KEYCHAIN-001 spec.md 5: three
+    stdlib-only leaves, extending the seam rather than departing from it.
+
+    All three are gated at 100%, and none has vectorstore.py's excuse for 85%:
+    with no external dependency there is no line in any of them that a test
+    cannot reach. The moment a third-party import lands here, that stops being
+    true and the floor becomes something to argue about rather than something to
+    meet.
+
+    keychain.py's claim is the strongest of the three and the assertion is what
+    holds it: it may not import `params` either, which is why it duplicates the
+    `secret` token as a literal (keychain.py:SECRET_TYPE) with a cross-check in
+    tests/test_keychain.py. Reach for `import params` here and this fails.
+    """
+    for name in ("params.py", "settings.py", "keychain.py"):
+        non_stdlib = imported_roots(parse(name)) - set(sys.stdlib_module_names)
+        assert non_stdlib == set(), f"{name} must import stdlib only; found {sorted(non_stdlib)}"
+
+
+# ------------------------------------------------------------------------------
+# AC-IMAGE — every first-party module main.py imports is in the image
+# ------------------------------------------------------------------------------
+#
+# This criterion exists because the repository has already got this wrong.
+# `Dockerfile:43` — then at `:34`, before `479d700` added the comment block above
+# it — shipped five modules for a whole SPEC while `main.py` imported
+# seven, and `import params` inside `coderunner-ai:latest` raised
+# ModuleNotFoundError. It went unnoticed because `coderunner:462` builds only
+# when the image is ABSENT, so editing source never triggers a rebuild and the
+# stale image kept importing an older `main.py` that needed neither module —
+# product.md 6.3's "stale-image hazard", concealing a second defect underneath
+# itself.
+#
+# The module list is derived from main.py's OWN IMPORT BLOCK rather than from a
+# hand-maintained second list, so the next module added to the application fails
+# this test instead of shipping missing. A second list would have to be updated
+# by exactly the person who just forgot to update the first one.
+
+
+def _dockerfile_copy_sources() -> list[str]:
+    """The file names on the Dockerfile `COPY … ./` line that ships the app."""
+    lines = (_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines()
+    copies = [line.split() for line in lines if line.startswith("COPY ") and "main.py" in line]
+    assert len(copies) == 1, "expected exactly one COPY line carrying main.py"
+    return copies[0][1:-1]  # drop the COPY keyword and the destination
+
+
+def _first_party_imports_of_main() -> set[str]:
+    """Every module main.py imports that exists as a .py file beside it."""
+    return {
+        f"{root}.py"
+        for root in imported_roots(parse("main.py"))
+        if (_ROOT / f"{root}.py").is_file()
+    }
+
+
+def test_the_image_copies_every_first_party_module_main_imports() -> None:
+    """AC-IMAGE, asserted at source level so it runs without a Docker daemon.
+
+    The other half of the criterion — a real `docker compose build` followed by
+    `import main` inside the resulting image — is a manual verification, because
+    the defect this replaces survived a whole SPEC of people READING this line
+    and finding it fine. This test is what stops a fourth occurrence; the build
+    is what proves the third one is over.
+    """
+    copied = set(_dockerfile_copy_sources())
+    required = _first_party_imports_of_main() | {"main.py"}
+
+    missing = sorted(required - copied)
+    assert missing == [], (
+        f"Dockerfile does not COPY {missing}; the built image's main.py will die "
+        "at import with a ModuleNotFoundError and no diagnostic beyond a traceback"
+    )
+
+
+def test_every_module_the_image_copies_still_exists_in_the_tree() -> None:
+    """The other direction, which costs one line and catches a rename.
+
+    A COPY naming a file that no longer exists fails the BUILD rather than the
+    run — loudly, but only for whoever builds next, which under coderunner:462's
+    build-if-absent rule can be months later.
+    """
+    for name in _dockerfile_copy_sources():
+        assert (_ROOT / name).is_file(), f"Dockerfile copies {name}, which is not in the tree"
+
+
+# ------------------------------------------------------------------------------
+# AC-CI — the CI image job checks EVERY file the Dockerfile ships (SPEC-CI-001)
+# ------------------------------------------------------------------------------
+#
+# ci.yml's source-integrity step hash-compares a hand-maintained `FILES="..."`
+# list against /app, and the comment above that list already says what goes wrong
+# when it drifts: "a file added there and not here is a file that can go stale
+# unobserved." That comment was written on 2026-08-06 and was falsified on
+# 2026-08-07 by commit 479d700, which added keychain.py to Dockerfile:43 and not
+# to FILES — within one day, on the exact failure it named.
+#
+# The two directions of the mismatch fail very differently, and only one of them
+# fails at all:
+#
+#   ABSENT from the image   -> the build's `import main` dies immediately. Loud.
+#   STALE in the image      -> builds, imports, passes every check ci.yml runs.
+#
+# So an unlisted file is not half-protected; it is exactly as unprotected as it
+# was before SPEC-CI-001 existed. keychain.py is the module that reads the user's
+# credential store, which makes it the worst possible one to leave in that state.
+#
+# A COMMENT IS NOT A GATE. Converting this particular invariant from a comment
+# into a test is what SPEC-CI-001 exists to do, so it is done here rather than
+# argued about in YAML, and the argument is the one-day counterexample above.
+#
+# Both parsers below are DERIVED. The Dockerfile side reuses
+# `_dockerfile_copy_sources()` above rather than re-parsing: two parsers of the
+# same line that can disagree is the same class of defect being fixed. The
+# import-smoke side is derived from the same COPY list rather than from a third
+# hand-written module list, for the same reason.
+
+_CI_WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yml"
+
+
+def _ci_workflow_source() -> str:
+    assert _CI_WORKFLOW.is_file(), f"{_CI_WORKFLOW} is missing; SPEC-CI-001 delivered it"
+    return _CI_WORKFLOW.read_text(encoding="utf-8")
+
+
+def _ci_hash_checked_files() -> set[str]:
+    """The `FILES="..."` set the source-integrity step hash-compares."""
+    matches = re.findall(r'^\s*FILES="([^"]*)"', _ci_workflow_source(), flags=re.MULTILINE)
+    assert len(matches) == 1, (
+        f"expected exactly one FILES= assignment in ci.yml, found {len(matches)}; "
+        "the parser below no longer knows which one gates the image"
+    )
+    return set(matches[0].split())
+
+
+def _ci_import_smoke_modules() -> set[str]:
+    """The module names the in-image import smoke actually imports."""
+    matches = re.findall(r'-c "import ([^;"]+)', _ci_workflow_source())
+    assert len(matches) == 1, (
+        f"expected exactly one in-image `python -c \"import ...\"` in ci.yml, "
+        f"found {len(matches)}"
+    )
+    return {name.strip() for name in matches[0].split(",") if name.strip()}
+
+
+def test_the_ci_yml_parsers_are_not_vacuous() -> None:
+    """The vacuity guard, and it is not theoretical either.
+
+    A regex that silently matches nothing turns every assertion built on it
+    permanently green — the test then reports the absence of a defect it is
+    structurally unable to observe, which is worse than no test, because it is
+    counted. Exactly that was found in tests/test_launcher_source.py on
+    2026-08-07: a whitespace tokenizer had been inspecting an empty slice.
+
+    So the emptiness check is a criterion in its own right rather than a
+    precondition buried inside another test.
+
+    WHAT IT DOES NOT COVER, stated because the first draft of this docstring
+    claimed otherwise. It catches a reformatting that makes a regex match
+    NOTHING; it does not catch one that makes a regex match LESS. Rewriting the
+    smoke as `import main; import memory; …` leaves this test green — the parse
+    is non-empty, just short — and the coverage test below is what fails. That
+    is an acceptable division of labour rather than a hole, since something
+    still fails loudly, but this test is not the general reformatting detector
+    the earlier wording advertised.
+    """
+    hash_checked = _ci_hash_checked_files()
+    smoke = _ci_import_smoke_modules()
+    copied = set(_dockerfile_copy_sources())
+
+    assert hash_checked, "parsed an EMPTY FILES= list out of ci.yml — the regex matched nothing"
+    assert smoke, "parsed an EMPTY import-smoke list out of ci.yml — the regex matched nothing"
+    assert copied, "parsed an EMPTY COPY list out of the Dockerfile"
+
+
+def test_the_ci_hash_check_covers_exactly_the_dockerfile_copy_set() -> None:
+    """Set EQUALITY, not containment, and the failure names which side is short.
+
+    A subset check in either direction passes the case it most needs to fail:
+    `FILES` ⊂ `COPY` is precisely the keychain.py hole, and `COPY` ⊂ `FILES` is a
+    hash step comparing a file the image does not carry, which reports MISSING
+    for a file nobody shipped and sends the reader to the wrong line.
+    """
+    copied = set(_dockerfile_copy_sources())
+    hash_checked = _ci_hash_checked_files()
+
+    assert copied and hash_checked, "vacuous parse; see test_the_ci_yml_parsers_are_not_vacuous"
+
+    shipped_unchecked = sorted(copied - hash_checked)
+    checked_unshipped = sorted(hash_checked - copied)
+
+    assert (shipped_unchecked, checked_unshipped) == ([], []), (
+        "Dockerfile COPY and ci.yml FILES= have diverged.\n"
+        f"  in the Dockerfile COPY but NOT in ci.yml FILES= : {shipped_unchecked}\n"
+        "    -> shipped into the image and hash-checked by nothing. An ABSENT copy of\n"
+        "       one of these fails the build; a STALE one passes CI in silence.\n"
+        f"  in ci.yml FILES= but NOT in the Dockerfile COPY : {checked_unshipped}\n"
+        "    -> the hash step will report MISSING for a file the image was never\n"
+        "       asked to carry, which blames the image for a mistake in the workflow.\n"
+        "  Fix whichever list is wrong. They are the same list."
+    )
+
+
+def test_the_ci_import_smoke_covers_every_module_the_image_copies() -> None:
+    """The smoke test must import everything the image ships, not a subset of it.
+
+    The import smoke is the check that catches the ABSENT case — a module named
+    in main.py's imports but missing from the image — and it catches it only for
+    modules it names. A module shipped but never imported by the smoke is checked
+    by neither half of this job: not by the smoke, which does not import it, and
+    not by the hash step if it is also missing from FILES=. That was keychain.py
+    on 2026-08-07.
+
+    The expected list is DERIVED from the COPY line, so adding a module to the
+    Dockerfile fails this test rather than shipping unverified. A third
+    hand-maintained list would have to be updated by the person who has just
+    demonstrated they forget to update the second one.
+    """
+    copied = set(_dockerfile_copy_sources())
+    smoke = _ci_import_smoke_modules()
+
+    assert copied and smoke, "vacuous parse; see test_the_ci_yml_parsers_are_not_vacuous"
+
+    unimported = sorted(name for name in copied if name.removesuffix(".py") not in smoke)
+
+    assert unimported == [], (
+        f"ci.yml's in-image import smoke does not import {unimported}, which "
+        "Dockerfile:43 copies into /app.\n"
+        "  An absent module is caught by this step or by nothing: the image builds\n"
+        "  fine without it and only fails when a user runs it."
+    )
+
+
+# ------------------------------------------------------------------------------
+# AC-INJ — params.py has exactly ONE literal-emission site  (SPEC-INPUT-001 U1)
+# ------------------------------------------------------------------------------
+#
+# Measured 2026-08-06, with value = 'Seoul"; import os; os.system("id"); x="':
+#
+#     f'city = "{value}"'   ->  rc 0, stdout begins `uid=501(kurapa) …`
+#     f'city = {value!r}'   ->  rc 0, stdout `39 'Seoul"; …'`
+#
+# BOTH EXIT 0. Both produce output. In the REPL the first one shows a green
+# `Execution OK (rc=0)` panel, the model receives the stdout as success feedback
+# and the turn is captured as a solved task. The difference is two characters
+# inside an f-string that a reviewer reads as "put the city in the script".
+#
+# The runtime half of AC-INJ is in tests/test_main_integration.py. This half is
+# the structural one: a module with exactly one emission site has exactly one
+# line for that criterion to be protecting.
+
+
+def _quote_adjacent_interpolations(tree: ast.Module) -> list[str]:
+    """Every f-string placeholder sitting next to a literal quote character."""
+    offences: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.JoinedStr):
+            continue
+        for part in node.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                if "'" in part.value or '"' in part.value:
+                    offences.append(f"line {node.lineno}: {part.value!r}")
+    return offences
+
+
+def test_params_py_has_exactly_one_literal_emission_site() -> None:
+    """One function, one `repr()`, so there is no second path a raw value
+    could take. `_literal()` may be CALLED from more than one place; what must
+    not exist is a second place that turns a value into source text."""
+    tree = parse("params.py")
+
+    repr_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "repr"
+    ]
+    assert len(repr_calls) == 1, f"params.py makes {len(repr_calls)} repr() calls; expected 1"
+
+
+def test_no_f_string_in_params_py_puts_a_value_between_quotes() -> None:
+    """The forbidden construction, stated as a property of the syntax tree.
+
+    `f'city = "{value}"'` is what M3 measured executing `os.system("id")`. Any
+    f-string in this module whose literal parts carry a quote character is either
+    that bug or one edit away from it, so the assertion is on the absence of the
+    quote rather than on the absence of the adjacency.
+    """
+    assert _quote_adjacent_interpolations(parse("params.py")) == []
+
+
+def test_params_py_uses_no_percent_formatting_or_str_format() -> None:
+    """The same hazard in its two other spellings.
+
+    `'city = "%s"' % value` and `'city = "{}"'.format(value)` are exactly as
+    unsafe as the f-string and would slip past a check written only for f-strings.
+    """
+    tree = parse("params.py")
+
+    modulo = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.BinOp)
+        and isinstance(node.op, ast.Mod)
+        and isinstance(node.left, ast.Constant)
+        and isinstance(node.left.value, str)
+    ]
+    assert modulo == [], "params.py uses %-formatting on a string literal"
+
+    formats = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "format"
+    ]
+    assert formats == [], "params.py calls .format() on something"
+
+
+# ------------------------------------------------------------------------------
+# AC-STDIN — the child's stdin is untouched  (SPEC-INPUT-001 U2, N1)
+# ------------------------------------------------------------------------------
+
+
+def test_run_python_passes_no_stdin_argument() -> None:
+    """Measured 2026-08-06 against `run_python()`'s exact argument list, for a
+    script whose only statement is `input("hi: ")`:
+
+        rc = 1, stdout = 'hi: ', stderr = EOFError: EOF when reading a line
+
+    `capture_output=True` pipes stdout and stderr and says NOTHING about stdin,
+    so the child inherits the parent's descriptor 0. Under pytest that is closed
+    or a pipe, hence the EOFError. Inside the container it is the REPL's own TTY
+    (docker-compose.yml:67-68), so the child would BLOCK, consuming the user's
+    keystrokes, for the full CODERUNNER_TIMEOUT — a silent thirty-second hijack
+    of the terminal the user is sitting at.
+
+    Asserted at source level rather than by observing a run, so it survives a
+    refactor: SPEC-INPUT-001 adds a `prelude` argument to this function and the
+    property being protected is that it added nothing else.
+    """
+    tree = parse("main.py")
+
+    subprocess_runs = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+    ]
+    assert subprocess_runs, "main.py no longer calls subprocess.run at all"
+
+    for call in subprocess_runs:
+        passed = {keyword.arg for keyword in call.keywords}
+        assert "stdin" not in passed, "run_python() now passes stdin= to the child"
+
+
+def test_the_prompt_still_forbids_input_and_now_offers_an_alternative() -> None:
+    """N1: main.py:136 is AMENDED, NOT DELETED. M1 is why it is there.
+
+    Read from the source rather than from an import so this runs on a bare
+    interpreter with the rest of the file.
+    """
+    source = (_ROOT / "main.py").read_text(encoding="utf-8")
+    prompt = source[source.index("SYSTEM_PROMPT = ") : source.index("# Data model")]
+
+    assert "No input()" in prompt
+    assert "do NOT call input()" in prompt
+    assert "# @param" in prompt
+
+
+def test_the_prompt_describes_no_second_fenced_block() -> None:
+    """AC-SYN, asserted on the instruction rather than only on the parser.
+
+    Measured 2026-08-06: a ```params``` block placed BEFORE the ```python``` block
+    makes CODE_BLOCK_RE.findall() return `['']` — the closing fence of the first
+    pairs with the opening fence of the second — so extract_last_python_block()
+    returns the empty string, `if not code:` is TRUE, and the turn silently
+    answers as if no code had been produced. No exception, no failed execution,
+    no retry. Reverse the order and it works, which is why N5 forbids the form
+    outright rather than mandating an order.
+    """
+    source = (_ROOT / "main.py").read_text(encoding="utf-8")
+    prompt = source[source.index("SYSTEM_PROMPT = ") : source.index("# Data model")]
+
+    assert prompt.count("```") == 2, "SYSTEM_PROMPT now describes more than one fenced block"
+    assert "```params" not in prompt
 
 
 def test_the_sandbox_still_receives_only_the_tools_module() -> None:

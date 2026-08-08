@@ -519,6 +519,11 @@ def _emit_status(
         emit(f"  record cap  : {cfg.max_records}")
     if stats["error"]:
         emit(f"  status      : degraded ({stats['error']})")
+    # O3 (SPEC-INPUT-001): the capture policy for parameterised turns is a memory
+    # concern the user will look for here first, but it lives in settings.py —
+    # this module performs no file I/O and is not about to start. A pointer costs
+    # one line; a user who types `/memory capture` and gets nothing costs more.
+    emit("  see also    : /params capture — how parameterised turns are stored")
 
 
 def _emit_list(

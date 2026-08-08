@@ -3,13 +3,13 @@
 # ------------------------------------------------------------------------------
 #  Author  : Chun Kang <ck@strpy.com>
 #  Purpose : Execute the gates this repository already owns — the test
-#            suite, the per-file coverage gate at conftest.py:195-225, and
+#            suite, the per-file coverage gate at conftest.py:215-245, and
 #            `ruff check .` — and add the one it did not have: proof that the
 #            container image carries the source that is in the tree.
 #
 #  This workflow WIRES UP gates. It defines none. No threshold, count or floor
 #  is restated below, and that is a requirement (SPEC-CI-001 N5), not a matter
-#  of taste: the coverage floors live at conftest.py:187-192 and are enforced by
+#  of taste: the coverage floors live at conftest.py:204-212 and are enforced by
 #  the `pytest_sessionfinish` hook, so this file's entire relationship with
 #  coverage is running `pytest` and honouring its exit status. A second copy in
 #  YAML would be the copy that drifts, because it is the copy nobody re-reads.
@@ -131,7 +131,7 @@ jobs:
         #
         # Installing requirements-dev.txt alone yields 242 passed, 1 skipped —
         # AND STILL EXITS 0 (measured 2026-08-05). The skip is
-        # tests/test_main_integration.py:25-27, which guards on `rich`; `rich`
+        # tests/test_main_integration.py:29-31, which guards on `rich`; `rich`
         # is requirements.txt:1, a RUNTIME dependency the dev file deliberately
         # does not carry (see its header). The broken job is green, its coverage
         # gate passes, it prints "Per-file coverage gate passed", and it has not
@@ -149,7 +149,7 @@ jobs:
         # not tell you the right set was requested, and it does not survive a
         # dropped platform wheel. The suite's response to a missing package is
         # not a failure but a SKIP — conftest.py:153,
-        # tests/test_vectorstore.py:22 and tests/test_main_integration.py:25-27
+        # tests/test_vectorstore.py:22 and tests/test_main_integration.py:29-31
         # all use `importorskip`. Those guards are a safety net for a platform
         # with no wheel; requirements-dev.txt:22-26 states outright that they
         # are NOT a licence to skip the gate in CI. This step is that sentence
@@ -199,12 +199,12 @@ jobs:
       - name: Test suite and per-file coverage gate
         # No arguments, no `-k`, no `--cov-fail-under`. Everything is in
         # pytest.ini and conftest.py. The gate that matters is per-file
-        # (conftest.py:187-225) and cannot be expressed as a combined
+        # (conftest.py:204-245) and cannot be expressed as a combined
         # `--cov-fail-under` at all: a combined total lets a high figure on a
         # large module mask a low one on a small module. Look for the literal
-        # line "Per-file coverage gate passed" (conftest.py:225) in this log.
+        # line "Per-file coverage gate passed" (conftest.py:245) in this log.
         #
-        # The floors themselves are at conftest.py:187-192 and are deliberately
+        # The floors themselves are at conftest.py:204-212 and are deliberately
         # not repeated here, in any form, including in this comment (N5). Two
         # copies of a threshold do not agree for long, and the copy in YAML is
         # the one nobody re-reads.
@@ -250,11 +250,59 @@ jobs:
         #                  alone would report nothing.
         #
         # MIN_PASSED is a floor, not an equality: adding tests must not fail the
-        # build. Raise it when the suite grows. 285 measured 2026-08-06 on
-        # Python 3.11.14 (SPEC-CI-001 AC-1) — 282 at authoring, +3 from the
-        # pulse-blanking fix, +5 from the line-by-line stream render, +1 from the
-        # readline prompt-width guard, +5 from the inline-markdown renderer and the
-        # live code highlighter.
+        # build. Raise it when the suite grows.
+        #
+        # 469 MEASURED 2026-08-06 on Python 3.11.14, from a real run — not
+        # computed from an expected delta. That distinction is the whole point:
+        # the floor exists to catch tests that stopped being COLLECTED, and
+        # arithmetic on a delta cannot see a test that was never found.
+        #
+        # Where the number comes from:
+        #   282  at SPEC-CI-001 authoring
+        #    +3  pulse-blanking fix
+        #    +5  line-by-line stream render
+        #    +1  readline prompt-width guard
+        #    +5  inline-markdown renderer and live code highlighter
+        #   ---
+        #   296  the previous floor (the suite had since drifted to 298; a floor
+        #        that trails the real count is safe, which is why it went
+        #        unnoticed)
+        #   +69  SPEC-INPUT-001 tests/test_params.py
+        #   +66  SPEC-INPUT-001 tests/test_settings.py
+        #   +11  tests/test_source_seam.py — 7 new source-level assertions
+        #        (AC-INJ's single emission site, AC-STDIN, AC-SYN) plus 4 from
+        #        params.py and settings.py joining FIRST_PARTY
+        #   +25  tests/test_main_integration.py — AC-INJ end to end, AC-CAP,
+        #        AC-ONCE, AC-MASK, AC-FUTURE, and the /params REPL dispatch
+        #   ---
+        #   469
+        #   +22  SPEC-KEYCHAIN-001 tests/test_keychain.py
+        #   +30  SPEC-KEYCHAIN-001 tests/test_launcher_source.py — AC-TRANSPORT,
+        #        AC-BOOT, AC-LAUNCH, AC-DOCTOR and AC-EXPOSE's documentation
+        #        clause, all at source level: the launcher has no harness
+        #   +17  tests/test_main_integration.py — AC-POLICY and AC-SOURCE
+        #    +3  tests/test_source_seam.py — AC-IMAGE (2) plus keychain.py
+        #        joining FIRST_PARTY
+        #   ---
+        #   541
+        #    +3  tests/test_source_seam.py — SPEC-CI-001 R-A, the ci.yml /
+        #        Dockerfile list seam: set equality of the COPY line against
+        #        FILES=, import-smoke coverage of that same set, and the
+        #        vacuity guard on both parsers
+        #   ---
+        #   544
+        #
+        # MEASURED, NOT COMPUTED. The arithmetic above records where the number
+        # came from; the number itself was taken from the `tests` attribute of a
+        # real run's pytest-results.xml — the same file this step parses. A floor
+        # derived by adding an expected delta cannot see a test that stopped
+        # being COLLECTED, which is the whole thing this gate exists to catch.
+        #
+        # 544 was measured on the HOST (2026-08-07, Python 3.11.14), not on a
+        # runner: this branch has never had a CI run, because this workflow
+        # triggers only on push to `main` and PRs to `main`. The floor is
+        # therefore the one number here that the pipeline has not yet checked
+        # against itself. See .moai/specs/SPEC-CI-001/verification-T3.md 4.2.
         #
         # This step is NOT a second coverage gate (N5) — it reads no coverage
         # figure and restates no floor. It counts tests.
@@ -265,7 +313,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 296
+          MIN_PASSED = 544
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):
@@ -313,7 +361,7 @@ jobs:
   #  a claim nobody made.
   #
   #  NO PYTEST IN HERE (SPEC-CI-001 N6). F1 makes an in-container run redundant,
-  #  and it is not free: Dockerfile:42-46 runs the image as uid/gid 1000 while
+  #  and it is not free: Dockerfile:51-55 runs the image as uid/gid 1000 while
   #  the runner's checkout belongs to a different uid, so a bind-mounted pytest
   #  would need `--user`, a writable HOME for `pip install --user`, and
   #  COVERAGE_FILE=/tmp/.coverage — three accommodations for zero additional
@@ -338,9 +386,10 @@ jobs:
         # layer cache. Those two do not compose: `docker compose build` has no
         # command-line flag for a cache backend, so the only way to give it one
         # is a `cache_from:`/`cache_to:` stanza inside docker-compose.yml — and
-        # this SPEC permits exactly one file outside .github/ to be edited
-        # (requirements-dev.txt). Driving buildx directly is what buys the
-        # cache without touching a file this change may not touch.
+        # docker-compose.yml is not a file this SPEC may edit (spec.md 5 admits
+        # only requirements-dev.txt and tests/test_source_seam.py outside
+        # .github/). Driving buildx directly is what buys the cache without
+        # touching a file this change may not touch.
         #
         # The three settings below are docker-compose.yml:58-62 transcribed:
         # context `.`, dockerfile `Dockerfile`, tag `coderunner-ai:latest`. THAT
@@ -353,7 +402,7 @@ jobs:
         # minus the cache (U4):
         #   docker buildx build --load -t coderunner-ai:latest .
         #
-        # Dockerfile:31-32 installs requirements BEFORE Dockerfile:34 copies the
+        # Dockerfile:31-32 installs requirements BEFORE Dockerfile:43 copies the
         # source, so a warm build should re-run only the copy. That is an
         # inference from layer order, not a measurement — T5 measures cold and
         # warm as SEPARATE numbers, and if cold exceeds roughly five minutes the
@@ -375,13 +424,18 @@ jobs:
         # Exercises the real python:3.11-slim base (Dockerfile:9) with the real
         # installed dependency set — the thing the host `test` job cannot check.
         # `--entrypoint python` overrides ENTRYPOINT ["python", "-u", "main.py"]
-        # (Dockerfile:48); importing main.py is safe because its REPL is behind
-        # the `__main__` guard at main.py:802.
+        # (Dockerfile:57); importing main.py is safe because its REPL is behind
+        # the `__main__` guard at main.py:1295.
         #
         # This step ALONE is not sufficient, and the next step is why.
+        #
+        # The module list here and the FILES list below are both derived from
+        # Dockerfile:43 by tests/test_source_seam.py, which fails if either
+        # drifts from it. See the comment on that step for why the comment alone
+        # was not enough.
         run: |
           docker run --rm --entrypoint python coderunner-ai:latest \
-            -c "import main, memory, recall, vectorstore, tools; print('import smoke ok')"
+            -c "import main, memory, recall, vectorstore, tools, params, settings, keychain; print('import smoke ok')"
 
       - name: Source integrity — the image must carry the checked-out tree
         # WHY A BUILD PLUS AN IMPORT SMOKE IS NOT ENOUGH.
@@ -391,7 +445,7 @@ jobs:
         # measured 2026-08-05, ALL FIVE source files in the local
         # coderunner-ai:latest differed from the working tree. Not one drifted
         # file — the entire copied set. The image dated from 2026-08-04, and
-        # `coderunner:163` rebuilds only when `docker image inspect` FAILS, i.e.
+        # `coderunner:462` rebuilds only when `docker image inspect` FAILS, i.e.
         # only when the image is ABSENT, so the divergence can never
         # self-correct: the launcher keeps running last week's code indefinitely
         # (product.md 6.3, as present tense rather than as a documented hazard).
@@ -399,13 +453,27 @@ jobs:
         # A build-only job would have passed against that image. This is the
         # step that makes the criterion able to fail (SPEC-CI-001 E4, AC-2).
         #
-        # The file list is exactly the set at Dockerfile:34. If that COPY line
+        # The file list is exactly the set at Dockerfile:43. If that COPY line
         # changes, change this list — a file added there and not here is a file
         # that can go stale unobserved.
+        #
+        # THAT SENTENCE DID NOT HOLD, AND THE PROOF IS ONE DAY OLD. It was
+        # written 2026-08-06 and falsified 2026-08-07 by 479d700, which added
+        # keychain.py to Dockerfile:43 and not to FILES — the exact omission it
+        # warns about, on a module that reads the user's credential store. The
+        # invariant is now enforced by tests/test_source_seam.py, which parses
+        # both lists and asserts SET EQUALITY, so this comment is a description
+        # of a gate rather than a substitute for one.
         run: |
           set -eu
 
-          FILES="main.py tools.py memory.py recall.py vectorstore.py"
+          # MUST match Dockerfile:43 exactly, and a test now says so. A module
+          # added to main.py's imports but not to that COPY line produces an
+          # image that cannot import main at all — which happened with params.py
+          # and settings.py and was concealed only because the local image was
+          # stale. A module copied but missing HERE is worse, because it fails
+          # nothing: an absent file breaks the build, a STALE one passes.
+          FILES="main.py tools.py memory.py recall.py vectorstore.py params.py settings.py keychain.py"
 
           # Scratch files go to a temp dir, not the working tree. On the runner
           # this is cosmetic; for the human running this step by hand against a
