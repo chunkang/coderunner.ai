@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -179,9 +180,10 @@ def test_params_and_settings_and_keychain_import_only_stdlib() -> None:
 # ------------------------------------------------------------------------------
 #
 # This criterion exists because the repository has already got this wrong.
-# `Dockerfile:34` shipped five modules for a whole SPEC while `main.py` imported
+# `Dockerfile:43` — then at `:34`, before `479d700` added the comment block above
+# it — shipped five modules for a whole SPEC while `main.py` imported
 # seven, and `import params` inside `coderunner-ai:latest` raised
-# ModuleNotFoundError. It went unnoticed because `coderunner:163` builds only
+# ModuleNotFoundError. It went unnoticed because `coderunner:462` builds only
 # when the image is ABSENT, so editing source never triggers a rebuild and the
 # stale image kept importing an older `main.py` that needed neither module —
 # product.md 6.3's "stale-image hazard", concealing a second defect underneath
@@ -233,11 +235,158 @@ def test_every_module_the_image_copies_still_exists_in_the_tree() -> None:
     """The other direction, which costs one line and catches a rename.
 
     A COPY naming a file that no longer exists fails the BUILD rather than the
-    run — loudly, but only for whoever builds next, which under coderunner:163's
+    run — loudly, but only for whoever builds next, which under coderunner:462's
     build-if-absent rule can be months later.
     """
     for name in _dockerfile_copy_sources():
         assert (_ROOT / name).is_file(), f"Dockerfile copies {name}, which is not in the tree"
+
+
+# ------------------------------------------------------------------------------
+# AC-CI — the CI image job checks EVERY file the Dockerfile ships (SPEC-CI-001)
+# ------------------------------------------------------------------------------
+#
+# ci.yml's source-integrity step hash-compares a hand-maintained `FILES="..."`
+# list against /app, and the comment above that list already says what goes wrong
+# when it drifts: "a file added there and not here is a file that can go stale
+# unobserved." That comment was written on 2026-08-06 and was falsified on
+# 2026-08-07 by commit 479d700, which added keychain.py to Dockerfile:43 and not
+# to FILES — within one day, on the exact failure it named.
+#
+# The two directions of the mismatch fail very differently, and only one of them
+# fails at all:
+#
+#   ABSENT from the image   -> the build's `import main` dies immediately. Loud.
+#   STALE in the image      -> builds, imports, passes every check ci.yml runs.
+#
+# So an unlisted file is not half-protected; it is exactly as unprotected as it
+# was before SPEC-CI-001 existed. keychain.py is the module that reads the user's
+# credential store, which makes it the worst possible one to leave in that state.
+#
+# A COMMENT IS NOT A GATE. Converting this particular invariant from a comment
+# into a test is what SPEC-CI-001 exists to do, so it is done here rather than
+# argued about in YAML, and the argument is the one-day counterexample above.
+#
+# Both parsers below are DERIVED. The Dockerfile side reuses
+# `_dockerfile_copy_sources()` above rather than re-parsing: two parsers of the
+# same line that can disagree is the same class of defect being fixed. The
+# import-smoke side is derived from the same COPY list rather than from a third
+# hand-written module list, for the same reason.
+
+_CI_WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yml"
+
+
+def _ci_workflow_source() -> str:
+    assert _CI_WORKFLOW.is_file(), f"{_CI_WORKFLOW} is missing; SPEC-CI-001 delivered it"
+    return _CI_WORKFLOW.read_text(encoding="utf-8")
+
+
+def _ci_hash_checked_files() -> set[str]:
+    """The `FILES="..."` set the source-integrity step hash-compares."""
+    matches = re.findall(r'^\s*FILES="([^"]*)"', _ci_workflow_source(), flags=re.MULTILINE)
+    assert len(matches) == 1, (
+        f"expected exactly one FILES= assignment in ci.yml, found {len(matches)}; "
+        "the parser below no longer knows which one gates the image"
+    )
+    return set(matches[0].split())
+
+
+def _ci_import_smoke_modules() -> set[str]:
+    """The module names the in-image import smoke actually imports."""
+    matches = re.findall(r'-c "import ([^;"]+)', _ci_workflow_source())
+    assert len(matches) == 1, (
+        f"expected exactly one in-image `python -c \"import ...\"` in ci.yml, "
+        f"found {len(matches)}"
+    )
+    return {name.strip() for name in matches[0].split(",") if name.strip()}
+
+
+def test_the_ci_yml_parsers_are_not_vacuous() -> None:
+    """The vacuity guard, and it is not theoretical either.
+
+    A regex that silently matches nothing turns every assertion built on it
+    permanently green — the test then reports the absence of a defect it is
+    structurally unable to observe, which is worse than no test, because it is
+    counted. Exactly that was found in tests/test_launcher_source.py on
+    2026-08-07: a whitespace tokenizer had been inspecting an empty slice.
+
+    So the emptiness check is a criterion in its own right rather than a
+    precondition buried inside another test.
+
+    WHAT IT DOES NOT COVER, stated because the first draft of this docstring
+    claimed otherwise. It catches a reformatting that makes a regex match
+    NOTHING; it does not catch one that makes a regex match LESS. Rewriting the
+    smoke as `import main; import memory; …` leaves this test green — the parse
+    is non-empty, just short — and the coverage test below is what fails. That
+    is an acceptable division of labour rather than a hole, since something
+    still fails loudly, but this test is not the general reformatting detector
+    the earlier wording advertised.
+    """
+    hash_checked = _ci_hash_checked_files()
+    smoke = _ci_import_smoke_modules()
+    copied = set(_dockerfile_copy_sources())
+
+    assert hash_checked, "parsed an EMPTY FILES= list out of ci.yml — the regex matched nothing"
+    assert smoke, "parsed an EMPTY import-smoke list out of ci.yml — the regex matched nothing"
+    assert copied, "parsed an EMPTY COPY list out of the Dockerfile"
+
+
+def test_the_ci_hash_check_covers_exactly_the_dockerfile_copy_set() -> None:
+    """Set EQUALITY, not containment, and the failure names which side is short.
+
+    A subset check in either direction passes the case it most needs to fail:
+    `FILES` ⊂ `COPY` is precisely the keychain.py hole, and `COPY` ⊂ `FILES` is a
+    hash step comparing a file the image does not carry, which reports MISSING
+    for a file nobody shipped and sends the reader to the wrong line.
+    """
+    copied = set(_dockerfile_copy_sources())
+    hash_checked = _ci_hash_checked_files()
+
+    assert copied and hash_checked, "vacuous parse; see test_the_ci_yml_parsers_are_not_vacuous"
+
+    shipped_unchecked = sorted(copied - hash_checked)
+    checked_unshipped = sorted(hash_checked - copied)
+
+    assert (shipped_unchecked, checked_unshipped) == ([], []), (
+        "Dockerfile COPY and ci.yml FILES= have diverged.\n"
+        f"  in the Dockerfile COPY but NOT in ci.yml FILES= : {shipped_unchecked}\n"
+        "    -> shipped into the image and hash-checked by nothing. An ABSENT copy of\n"
+        "       one of these fails the build; a STALE one passes CI in silence.\n"
+        f"  in ci.yml FILES= but NOT in the Dockerfile COPY : {checked_unshipped}\n"
+        "    -> the hash step will report MISSING for a file the image was never\n"
+        "       asked to carry, which blames the image for a mistake in the workflow.\n"
+        "  Fix whichever list is wrong. They are the same list."
+    )
+
+
+def test_the_ci_import_smoke_covers_every_module_the_image_copies() -> None:
+    """The smoke test must import everything the image ships, not a subset of it.
+
+    The import smoke is the check that catches the ABSENT case — a module named
+    in main.py's imports but missing from the image — and it catches it only for
+    modules it names. A module shipped but never imported by the smoke is checked
+    by neither half of this job: not by the smoke, which does not import it, and
+    not by the hash step if it is also missing from FILES=. That was keychain.py
+    on 2026-08-07.
+
+    The expected list is DERIVED from the COPY line, so adding a module to the
+    Dockerfile fails this test rather than shipping unverified. A third
+    hand-maintained list would have to be updated by the person who has just
+    demonstrated they forget to update the second one.
+    """
+    copied = set(_dockerfile_copy_sources())
+    smoke = _ci_import_smoke_modules()
+
+    assert copied and smoke, "vacuous parse; see test_the_ci_yml_parsers_are_not_vacuous"
+
+    unimported = sorted(name for name in copied if name.removesuffix(".py") not in smoke)
+
+    assert unimported == [], (
+        f"ci.yml's in-image import smoke does not import {unimported}, which "
+        "Dockerfile:43 copies into /app.\n"
+        "  An absent module is caught by this step or by nothing: the image builds\n"
+        "  fine without it and only fails when a user runs it."
+    )
 
 
 # ------------------------------------------------------------------------------
