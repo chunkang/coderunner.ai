@@ -24,11 +24,15 @@ Covers U1, U2, S3, N3, E3.
 
 **Then**
 
-- the summary line reports **0 skipped** and a pass count at or above the recorded floor — **285** as of 2026-08-06, held in exactly one place, `MIN_PASSED` in `ci.yml` (282 at authoring; the pulse-blanking fix added three);
+- the summary line reports **0 skipped** and a pass count at or above the recorded floor, which
+  is held in exactly one place — **`MIN_PASSED` in `ci.yml`** — and is therefore **not restated
+  here**. This clause previously named the number in the same sentence that claimed it lived in
+  one place, which is N5's own violation committed against N5's own rule; the copy went stale
+  within a day of being written, as a second copy of a threshold does;
 - coverage reports **`memory.py` 100%**, **`recall.py` 100%**, **`vectorstore.py` ≥ 85%**
-  (measured at 100% on the host, 2026-08-05), against the floors at `conftest.py:187-192`;
+  (measured at 100% on the host, 2026-08-05), against the floors at `conftest.py:204-212`;
 - the log contains the literal line **`Per-file coverage gate passed`**, emitted by
-  `conftest.py:225`;
+  `conftest.py:245`;
 - the job exits 0.
 
 **And** the assertion is on the **count and the skip count**, not on the exit status.
@@ -75,7 +79,7 @@ Covers E4, N6.
 **When** it runs
 `docker run --rm --entrypoint python coderunner-ai:latest -c "import main, memory, recall, vectorstore, tools"`
 and then compares the SHA-256 of the five files at `/app` — the exact set copied by
-`Dockerfile:34` — against the same five files in the checkout
+`Dockerfile:43` — against the same five files in the checkout
 
 **Then**
 
@@ -177,7 +181,7 @@ wheel (R2), or an editing mistake in an install step
 
 **And** the run never reaches the state it exists to prevent: a green run in which
 `conftest.py:153` and `tests/test_vectorstore.py:22` skip the store-dependent suites, the
-`coverage unavailable` branch at `conftest.py:206-209` fires or is bypassed, and
+`coverage unavailable` branch at `conftest.py:227-229` fires or is bypassed, and
 `vectorstore.py` goes **unexercised** while the summary still reads green.
 
 **And** the ordering is load-bearing: a preflight placed *after* `pytest` would report the same
@@ -292,11 +296,11 @@ a registry credential, or a token beyond the default read-scoped `GITHUB_TOKEN` 
 
 | Gate | Enforced by | Threshold |
 |---|---|---|
-| Test count | AC-1 | **0 skipped**, pass count >= `MIN_PASSED` (285) |
-| Per-file coverage | `conftest.py:195-225` — **never restated in YAML** (N5) | `memory.py` 100%, `recall.py` 100%, `vectorstore.py` ≥ 85% (`conftest.py:187-192`) |
+| Test count | AC-1 | **0 skipped**, pass count >= `MIN_PASSED` — the value in `ci.yml`, cited by symbol and never by literal (N5) |
+| Per-file coverage | `conftest.py:215-245` — **never restated in YAML** (N5) | `memory.py` 100%, `recall.py` 100%, `vectorstore.py` ≥ 85% (`conftest.py:204-212`) |
 | Lint | AC-4 | `ruff check .` reports zero findings, ruff **0.16.1** |
 | Formatting | AC-4 | **not gated**, by design |
-| Image integrity | AC-2 | five-of-five SHA-256 match against `Dockerfile:34` |
+| Image integrity | AC-2 | five-of-five SHA-256 match against `Dockerfile:43` |
 | Import smoke | AC-2, AC-3 | in-image and on-host, both |
 
 ### Verification status
