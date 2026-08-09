@@ -93,6 +93,16 @@ ehthumbs.db
 logs/
 *.tmp
 *.temp
+
+# SPEC-PROMPT-001 v1.1.1: probe-run progress logs are EVIDENCE, not noise.
+# `*.log` above was silently swallowing
+# .moai/specs/SPEC-PROMPT-001/probe-runs/v0-target.progress.log — one of the two
+# artefacts a probe run produces. `git add` would have taken the JSONL and
+# dropped the log WITHOUT SAYING SO, which is the same failure shape as a
+# vacuous parser: the absence reads as a clean result. A run's per-trial
+# classifications and wall-clock timings are how a recorded rate is audited
+# against the run that produced it, so they are tracked deliberately.
+!.moai/specs/**/probe-runs/*.log
 *.bak
 *.backup
 
