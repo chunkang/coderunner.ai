@@ -1,6 +1,6 @@
 ---
 id: SPEC-PROMPT-001
-version: "1.0.0"
+version: "1.1.1"
 status: "draft"
 created: "2026-08-08"
 updated: "2026-08-08"
@@ -9,6 +9,203 @@ priority: "HIGH"
 ---
 
 ## HISTORY
+
+### v1.1.1 (2026-08-09) — A false claim about this SPEC's own evidence, withdrawn
+
+**`verification-T3.md` claimed twice, in bold, that the pre-registration "was committed" before T2
+ran. It was not. Nothing was committed.** Found by quality review, verified independently before
+being acted on:
+
+```
+$ git show HEAD:.moai/specs/SPEC-PROMPT-001/verification-T3.md \
+    | grep -cE 'r0|Fisher|0\.40|alpha|pre-regist'
+0
+$ git status --porcelain .moai/specs/SPEC-PROMPT-001/
+ M acceptance.md    M plan.md    M spec.md    M verification-T3.md
+```
+
+The committed v1.0.0 of that file has **no §1.1 and no §1.2 at all** — its gate was the superseded
+*"refusal rate"* / `N ≥ 10` formulation. So the rule and the results it gates sit in **one
+uncommitted working tree**, indistinguishable in git from having been written in a single pass after
+the numbers landed.
+
+**This is the worst class of error this SPEC could contain, and the reason is structural rather than
+moral.** A5's whole argument for pre-registration is that *"a threshold chosen after the numbers
+arrive is not a gate"*. A false claim that the threshold was committed first does not merely
+overstate the evidence — **it manufactures the exact property whose absence would invalidate the
+gate.** It is also the one error that this SPEC's own N7 discipline was least likely to catch, because
+N7 polices *figures*, and this was a claim about *process*.
+
+**`spec.md` §4 never made the claim.** Its wording has always been the accurate *"written into
+`verification-T3.md` §1 **before T2 runs**"*. The overclaim was local to `verification-T3.md`, which
+means it was not a considered position — it was a stronger sentence written where a weaker one
+belonged, in the file with the most to gain from it. Both sites now carry §4's wording.
+
+**What was done, and what deliberately was not:**
+
+- Both false claims **replaced** with the accurate weaker wording. **T2 was not re-run** — the data
+  are sound; it is the claim about them that was not.
+- **`verification-T3.md` §1.0 added**, before the rule it qualifies, stating that the ordering is
+  **not corroborated by git**, that the amendments and results were produced together, and that
+  **this limitation is permanent and no later commit can repair it** — committing now yields one
+  commit containing both, which is the artefact a fitted rule would also produce.
+- **The circumstantial evidence recorded as evidence, with its weight**, not as reassurance: the
+  rule names no observed value (**weak**); the threshold is non-trivial in both directions, demanding
+  `r2 ≤ 5/30` against `r0 = 17/30` (**moderate**); and the rule is **non-degenerate** — re-derived
+  2026-08-09 with `math.comb`, the 0.40 absolute clause **strictly dominates** Fisher, with
+  `p ≤ 0.00139` across every `r2` that satisfies it, while `k = 6…9` clear Fisher and are rejected by
+  the absolute clause (**moderate**). None of it substitutes for the git ordering and §1.0 says so.
+- **`acceptance.md` AC-GATE item 5 amended**, because its `git log` form is now permanently
+  unsatisfiable for this SPEC. It is replaced by a check carried **inside the data** — `main.py`'s
+  sha256, recorded in all 30 trial records and constant across them — with the reason for the
+  amendment written beside it. **Amended rather than deleted, and rather than quietly ticked:** a
+  criterion that cannot be met is not evidence, and leaving it to be ticked converts an unmet
+  requirement into a claim.
+
+**Three lesser corrections in the same pass:**
+
+- **`.gitignore:92`'s `*.log` was silently swallowing `probe-runs/*.progress.log`** — one of the two
+  evidence artefacts. `git add` would have taken the JSONL and dropped the log **without saying so**,
+  which is the same failure mode as a vacuous parser: the absence looks like a clean result. A
+  negation rule now tracks probe-run logs, verified with `git check-ignore -v`.
+- **An untraceable figure removed from §2.1.** *"Fourteen close with a variant of…"* reconciles to no
+  definition: measured, the exact substring gives **8**, admitting *"something else"* gives **9**,
+  admitting *"feel free to ask"* gives **11**. The matching rule is now stated and all three numbers
+  reported. It decided nothing — but a document whose entire value is that its figures trace cannot
+  carry one that does not.
+- **Three stale not-run markers corrected**, all understating what had been run: §2's preamble said
+  *"Not yet run"* while §2.1 was complete, and §5 said *"nothing has been run"* and *"§3.1 is empty"*
+  when `r0` was in it.
+
+**Not changed:** no requirement, no threshold, no figure, and no acceptance criterion other than
+AC-GATE item 5. **The gate itself is untouched** — `(r0 − r2) ≥ 0.40` and one-sided Fisher at
+`alpha = 0.05`, on the Target cell alone. What changed is the strength of the claim this SPEC makes
+about **when** that rule was written.
+
+**The cheap fix, named for whoever writes the next one:** commit the pre-registration **on its own,
+before running anything**. It costs one commit and it is the only thing that would have made this
+checkable. It is unavailable only in retrospect.
+
+### v1.1.0 (2026-08-08) — Five corrections, taken before the instrument was built
+
+**All five were found by re-verifying v1.0.0's own evidence rather than by reading it.** Four of them
+correct a claim this SPEC made about the tree; the fifth closes a hole in the SPEC's own logic that
+would have shipped an unmeasured prompt. None of them is deleted below — each is struck through,
+marked superseded, and given the reason it stopped being true, in the discipline
+`SPEC-KEYCHAIN-001` §2.4 and `SPEC-MEMORY-001` C6 established for this repository. **A measurement
+that was correct when taken is not an error, and erasing it destroys the only record of why the
+wrong conclusion was reasonable.**
+
+**A1 — the Ollama precondition is falsified, and the half of it that survives is the important
+half.** v1.0.0 recorded the probe as *blocked*: no host binary, `localhost:11434` → `http_code=000`,
+therefore "the probe cannot be run from where the SPEC was written". **The two facts still hold and
+the conclusion does not.** Re-verified 2026-08-08: the Docker daemon is running; `coderunner-ollama`
+is **Up and healthy**; `docker exec coderunner-ollama ollama list` reports **`llama3.1:8b`
+(`46e0c10c039e`, 4.9 GB)** and `nomic-embed-text:latest` (274 MB); `coderunner-ai:latest`
+(`63b37a80bfb7`) is built and present. There is still no host `ollama` binary and `localhost:11434`
+still returns `000` — **because `docker-compose.yml:28` publishes no port for the `ollama` service,
+deliberately**, and says so: *"Kept internal to the compose network — no host port exposure
+needed."* (v1.0.0's own draft of this note cited `:21`, which is the line reading `services:`; the
+comment is at `:28`, verified by `sed`.) So `http_code=000` is not evidence of an absent model. It
+is evidence of a **design decision working**, and v1.0.0 read a healthy system as a broken one. The
+probe was never blocked; it was only unreachable from the one place nobody needed to reach it from.
+
+**A2 — `tools.py` is not gated, and the SPEC's evidence for saying it was does not say it.**
+v1.0.0's `plan.md` §0 listed *"a `tools.py` that is gated and tested, so T5 lands in a covered
+module"*, citing `structure.md:234`. Verified 2026-08-08: `pytest.ini:57-62` carries `--cov` for
+`memory`, `recall`, `vectorstore`, `params`, `settings`, `keychain` and **no `--cov=tools`**;
+`conftest.py:205-212`'s `PER_FILE_COVERAGE_TARGETS` has **no `tools.py` entry**;
+**`tests/test_tools.py` does not exist**. `structure.md:234` is a row in a table headed *"Why it is
+testable in isolation"* — **an aspirational list of testing targets, not a record of coverage**.
+Reading it as coverage is the same category error as reading a `COPY` line as proof of an import,
+which `SPEC-KEYCHAIN-001` AC-IMAGE was written about. **T5 is therefore materially larger than
+v1.0.0 stated**: it is the first test file `tools.py` has ever had, plus a two-edit gate
+registration — `pytest.ini`'s `--cov=tools` **and** `conftest.py`'s target entry, **both or
+neither**, because `pytest.ini:42-46` records that an entry without a matching `--cov` makes
+`cov.report()` raise and fails the session.
+
+**A3 — a fenced example in the new prompt section would fail CI, and would re-arm a trap this
+repository has already measured.** `tests/test_source_seam.py:547` asserts
+`prompt.count("```") == 2` — exactly one fenced block in the whole of `SYSTEM_PROMPT`. Any new
+capability section written with fenced code blocks breaks that assertion outright. Worse, it raises
+the odds of the failure recorded at `tests/test_source_seam.py:533-548`: with two fenced blocks in
+the model's reply, the closing fence of the first pairs with the opening fence of the second,
+`CODE_BLOCK_RE.findall()` returns `['']`, `extract_last_python_block()` returns the empty string,
+and the turn **silently classifies DIRECT** — which is the exact branch this SPEC exists to stop
+firing. So the SPEC would have been teaching, by example, the form that produces the defect. **New
+prompt material is indented and unfenced** (N9), matching the existing examples at `main.py:146-153`
+and `main.py:162-163`, neither of which uses a fence.
+
+**A4 — the gate had no machine-decidable endpoint, and now it has one, pre-registered.** S1 and
+**AC-GATE** decided the gate on *"refusal rate"*. E6 defines the classifier for the **DIRECT** rate.
+**These are different quantities**: a refusal is a human-coded subset of DIRECT — a turn that routes
+DIRECT because the model answered conversationally is not a refusal, and a reply with two fenced
+blocks classifies DIRECT while refusing nothing at all. Deciding a gate on the human-coded quantity
+while defining only the machine-coded one is how a gate becomes an argument. **Resolved: the gate is
+decided on the DIRECT rate**, machine-decided by `extract_last_python_block()` returning falsy.
+Refusal rate is retained as a **secondary, human-coded overlay** (O3 supplies the phrasings) that
+**does not decide the gate**. The full decision rule — threshold, test, alpha, and the single cell
+it is evaluated on — is **written into `verification-T3.md` §1 now, before T2 runs**, because a
+threshold chosen after the numbers arrive is not a gate.
+
+**A5 — the M-b branch would have shipped a variant no cell measures.** V2 is defined as V1 + the
+capability section. Under M-b the routing repair (V1) does **not** ship, but the `tools.py`
+advertisement still does — because advertising a helper has no safety component, which §3.4 already
+says. What ships under M-b is therefore **`V0 + capability`**, and **no cell in the design measures
+that prompt**. The SPEC would have shipped, on its own most-likely-adverse branch, the one variant
+it never looked at. **Resolved: V3 = V0 + capability section**, a **conditional** variant run
+**only** on the M-b branch, at the tool-reachable cell (N=20) and across the control set
+(5 × N=30). It is recorded as a conditional obligation — work owed **if** M-b is reached, not work
+to do now.
+
+**N per cell rises from v1.0.0's `N ≥ 10` to Target 30 / off-example 20 / tool-reachable 20 /
+control 30 per prompt, and the arithmetic is the reason.** At N=10 per arm a two-proportion test has
+usable power only against a swing of roughly **50 percentage points** — so `N ≥ 10` could have
+returned "no significant difference" for a repair that moved routing by 40pp, and the SPEC would
+have recorded M-b on a measurement structurally unable to see M-a. The control side is worse,
+because its question is **non-inferiority**: by the rule of three, observing 0 failures in 10 trials
+bounds the true regression rate only at **30%**; at 30 trials it bounds it at **10%**. A control set
+that cannot exclude a 30% regression is not a defence against R2, and R2's blast radius is every
+turn of every session. **If budget forces a cut, cut the NUMBER of control prompts (floor 3), never
+N below 20** — three prompts at N=30 is a measurement; five at N=6 is a rumour.
+
+**What this amendment does not change.** No requirement was weakened, no acceptance criterion was
+removed, and the three-outcome classification (M-a / M-b / M-c) stands exactly as written. The gate
+is now harder to pass than v1.0.0's, not easier: it must clear a pre-registered absolute threshold
+**and** a significance test, on one named cell, with no other cell permitted to rescue it.
+
+**T1 and T2 (partial) landed under this version. What was measured, and what was not.**
+
+The harness is built (`probe/`, `tests/test_probe.py`), and the **V0 Target cell has been run at
+N=30**: **DIRECT rate `r0` = 56.7 % (17/30), 95% Wilson [39.2 %, 72.6 %]**, against `llama3.1:8b`
+Q4_K_M, digest `46e0c10c039e…`, Ollama 0.32.1, on the compose sidecar. **Zero** trials hit the
+two-fence trap, and all 17 DIRECT trials were read and are genuine refusals — so in this cell the
+gated quantity and the secondary overlay coincide. Full record in `verification-T3.md` §1–§2.1.
+
+**The anecdote is now a rate, and the rate is high.** The turn refuses more often than not, and the
+interval excludes everything below 39%. `n=1` has become 30.
+
+**The diagnosis was confirmed in the model's own words, which was not an anticipated outcome.**
+Trial #8 routed DIRECT saying *"Since this task requires computation on data (your Gmail account)
+**which I don't have access to**, I'll follow the DIRECT protocol"* — quoting `main.py:128-129` back
+as its reason. Trial #1 routed CODE from the identical prompt saying *"Since this task requires
+computation on **live data provided by the user**, I will follow the CODE protocol"*, and then wrote
+`imaplib` with `# @param` declarations. **Same prompt, same model, same turn shape, opposite
+resolutions of the same clause.** §2.1.1 records both verbatim. This is the contradiction in §2.1
+observed rather than inferred, and it is the strongest evidence this SPEC has for D1.
+
+**Named as not run, not as not needed:**
+
+- **§2.2 off-example, §2.3 tool-reachable and §2.4 the control set — all V0, all NOT RUN.** 190
+  trials at the observed rate is 3–4 hours; the gated cell was run first and the run then stopped.
+  **The control baseline's absence is the most consequential of the three**: R2's only defence is a
+  before/after comparison, and the "before" half does not yet exist.
+- **Code correctness was NOT assessed** for any of the 13 CODE trials. The M-a/M-c distinction is
+  explicitly deferred (`verification-T3.md` §3.5).
+- **T3, T4 and everything downstream are untouched.** `main.py` is unmodified — verified by sha256,
+  constant across all 30 records.
+- **`MIN_PASSED` was NOT raised.** The suite goes 544 → 574 with `tests/test_probe.py`; E5 requires
+  that floor to be raised from a measured `junitxml` run, and that is T8's work, not this one's.
 
 ### v1.0.0 (2026-08-08) — Initial specification
 
@@ -90,10 +287,15 @@ makes that a **gate** (T3) placed before any prompt-wording effort, with **three
 than two — the third, *complies but writes code that does not work*, is the one that most changes
 the downstream design and was not named in the brief that produced this SPEC.
 
-**Not measured, and named as not measured.** No probe has been run. Ollama is not reachable from
+**Not measured, and named as not measured.** No probe has been run. ~~Ollama is not reachable from
 the host this SPEC was written on — `command -v ollama` fails, there is no binary at
 `/usr/local/bin/ollama` or `/opt/homebrew/bin/ollama`, and `localhost:11434` returns
-`http_code=000` (measured 2026-08-08). The probe must therefore run against the compose `ollama`
+`http_code=000` (measured 2026-08-08).~~ **SUPERSEDED at v1.1.0 — see A1.** *Those three facts are
+still true and they never meant what this paragraph concluded. `localhost:11434` returns `000`
+because `docker-compose.yml:28` publishes no host port for the `ollama` service, deliberately. The
+sidecar is Up and healthy and serves `llama3.1:8b` (`46e0c10c039e`) — re-verified 2026-08-08. The
+probe was not blocked; it was unreachable only from the host namespace, which is where nothing needs
+to reach it from.* The probe must therefore run against the compose `ollama`
 sidecar, which is where `llama3.1:8b` actually lives. That is a **precondition of T1**, recorded
 here so it is a plan item rather than a discovery. `verification-T3.md` exists with its structure
 in place and its results empty.
@@ -254,10 +456,16 @@ went wrong. The user sees one panel and a yellow line.
 | HTML results parsed by regex, not by `bs4`, although `bs4` and `lxml` are installed | `tools.py:51-55`; `tech.md` §8.7 |
 | **Instant-answer failure is swallowed** — a parse regression is indistinguishable from an outage | `tools.py:90-91` `except Exception: pass` |
 | Outer handler returns a `search_error` dict rather than raising, so a caller that does not inspect `title` treats failure as a result | `tools.py:94-95` |
+| **Not covered by any coverage gate, and never tested** — added at v1.1.0 (A2) | no `--cov=tools` in `pytest.ini:57-62`; no entry in `conftest.py:205-212`; no `tests/test_tools.py`. Verified 2026-08-08 |
 
-The bottom three rows are `tech.md` §8.7, and they are the reason T5 exists: **this SPEC promotes
+The middle three rows are `tech.md` §8.7, and they are the reason T5 exists: **this SPEC promotes
 `tools.py` from dead code to live code, and §6.1 and §8.7 are about the same module.** Fixing the
 first without addressing the second ships a live helper whose failures are invisible.
+
+**The last row is why T5 is a larger task than v1.0.0 costed it at**, and it compounds the rest
+rather than sitting beside them: the module about to be promoted to the hot path has **no test at
+all**, so there is nothing to regress against and nothing to observe the fix red first with. §5
+states the three pieces of work that follow from it.
 
 ### 2.6 The absence this SPEC is most exposed to
 
@@ -265,7 +473,8 @@ first without addressing the second ships a live helper whose failures are invis
 |---|---|
 | Any test for `main.py` | `structure.md:56` — *"There are zero tests for `main.py` and `tools.py`"* (the `tools.py` half is now false; the `main.py` half is not) |
 | Any test of `SYSTEM_PROMPT`'s effect | none exists, and none can exist without a model in the loop |
-| Any reachable Ollama on the authoring host | measured 2026-08-08: `command -v ollama` fails; no binary at `/usr/local/bin` or `/opt/homebrew/bin`; `localhost:11434` → `http_code=000` |
+| Any test for `tools.py`, and any coverage gate on it | **added at v1.1.0 (A2).** `pytest.ini:57-62` has no `--cov=tools`; `conftest.py:205-212` has no `tools.py` entry; `tests/test_tools.py` does not exist. Verified 2026-08-08 |
+| ~~Any reachable Ollama on the authoring host~~ | ~~measured 2026-08-08: `command -v ollama` fails; no binary at `/usr/local/bin` or `/opt/homebrew/bin`; `localhost:11434` → `http_code=000`~~ **SUPERSEDED at v1.1.0 (A1)** — the host facts hold; the conclusion does not. `docker-compose.yml:28` publishes no port for `ollama` **by design**, and the sidecar is Up, healthy and serving `llama3.1:8b` (`46e0c10c039e`) |
 | CI pass floor to be raised | `MIN_PASSED = 544` at `.github/workflows/ci.yml:316` |
 
 **A prompt edit is a global behaviour change with no regression net.** That is R2 in `plan.md`, it
@@ -304,6 +513,14 @@ by nothing, exampled by nothing, named by nothing, and consequently dead for its
 
 **So the intervention most likely to work is the one this prompt already demonstrates works.** A
 rule the model does not act on is the failure mode under repair, not a mitigation for it (N4).
+
+**The examples are indented and unfenced, and that is a hard constraint rather than a style note
+(N9, added v1.1.0).** The shape at `main.py:146-153` — the very shape being copied — is already
+indented and unfenced, as is the `@param` example at `main.py:162-163`. Writing the new ones with
+fences breaks `tests/test_source_seam.py:547` (`prompt.count("```") == 2`) and, more seriously,
+demonstrates by example the two-block form that makes `CODE_BLOCK_RE.findall()` return `['']` and
+routes the turn silently to DIRECT (`tests/test_source_seam.py:533-548`). A prompt that teaches the
+defect by example is worse than one that stays silent.
 
 **Cost.** The prompt grows, and every added line is in the context of every turn of every session.
 That is a real and permanent token cost paid on all traffic to fix a subset of it. Accepted, and
@@ -384,20 +601,56 @@ already established the opposite discipline — `SPEC-KEYCHAIN-001`'s HISTORY na
 *"as not run and not as not needed"*, and `SPEC-CI-001`'s `verification-T3.md` states in its own
 header that no run was triggered to produce it.
 
-**Precondition, and it is a plan item rather than a discovery.** Ollama is not reachable from the
-authoring host (§2.6). The probe runs against the compose `ollama` sidecar, which pins
-`llama3.1:8b` (`docker-compose.yml:46`, `:78`). Any result obtained against a different model, a
+**Precondition — SATISFIED at v1.1.0, and the reason the v1.0.0 text read otherwise is recorded
+rather than deleted.** ~~Ollama is not reachable from the authoring host (§2.6).~~ Re-verified
+2026-08-08: the compose `ollama` sidecar (`coderunner-ollama`) is **Up and healthy** and
+`docker exec coderunner-ollama ollama list` reports **`llama3.1:8b`, ID `46e0c10c039e`, 4.9 GB**.
+There is still no host `ollama` binary and `localhost:11434` still answers `http_code=000`, because
+`docker-compose.yml:28` publishes **no host port** for that service on purpose. The probe runs
+**inside the compose network**, at `http://ollama:11434`, which is the only place it was ever
+supposed to run. Any result obtained against a different model, a
 different quantisation or a different host is a result about that model and must be labelled as
 such.
 
-**Shape.** Variants × task set × N trials, N ≥ 10 per cell because an 8B model at default
-temperature is stochastic and a single trial measures nothing.
+**The model tag is a compose DEFAULT, not a pin, and the probe must not read it from compose.**
+`docker-compose.yml:46` and `:78` are `${CODERUNNER_MODEL:-llama3.1:8b}` — a host environment
+variable with a fallback. `main.py:71` reads the same variable. So compose declares an *intention*;
+only the running server can report the *fact*. The probe therefore records `client.list()` and
+`client.show(MODEL_NAME)` at run time, plus the observed `OLLAMA_HOST`, and `verification-T3.md` §1
+is filled from those rather than from the file. S4 is discharged by the readback, not by the YAML.
 
-| Variant | Prompt |
-|---|---|
-| **V0** | `SYSTEM_PROMPT` exactly as it is today. This is the baseline and it converts the reported anecdote into a rate |
-| **V1** | V0 with the routing contradiction repaired (D1) |
-| **V2** | V1 with the capability section added, naming `tools.py` (D2, D3) |
+**Shape.** Variants × task set × N trials. ~~N ≥ 10 per cell because an 8B model at default
+temperature is stochastic and a single trial measures nothing.~~ **SUPERSEDED at v1.1.0 — the
+premise was right and the number was too small to act on it.**
+
+| Cell | N per arm | Why this N |
+|---|---|---|
+| **Target** | **30** | It is the gated cell. At N=10 per arm a two-proportion test has usable power only against a swing of roughly **50 percentage points**, so `N ≥ 10` could return "no difference" for a repair that moved routing by 40pp — recording M-b on a measurement structurally unable to observe M-a |
+| **Off-example network** | **20** | Diagnostic, not gated. It separates a routing effect from an account-shaped one; it needs to resolve a large difference, not a small one |
+| **Tool-reachable** | **20** | Diagnostic, and its V0 expectation is **zero** (§4 below, `verification-T3.md` §2.3). Distinguishing zero from small does not need 30 |
+| **Control**, per prompt | **30** | Its question is **non-inferiority**, which is the harder direction. By the rule of three, 0 failures in 10 trials bounds the true regression rate only at **30%**; 0 in 30 bounds it at **10%**. A control that cannot exclude a 30% regression is not a defence against R2 |
+
+**If budget forces a cut, cut the NUMBER of control prompts — floor 3, keeping one of each kind —
+and never cut N below 20.** Three prompts at N=30 is a measurement; five at N=6 is a rumour. This is
+stated as a rule now so that the trade is made against a written constraint at 2 a.m. rather than
+against fatigue.
+
+| Variant | Prompt | When it runs |
+|---|---|---|
+| **V0** | `SYSTEM_PROMPT` exactly as it is today. This is the baseline and it converts the reported anecdote into a rate | Always (T2) |
+| **V1** | V0 with the routing contradiction repaired (D1) | Always (T3) |
+| **V2** | V1 with the capability section added, naming `tools.py` (D2, D3) | Always (T3) |
+| **V3** | **V0 + the capability section, without the routing repair.** Added at v1.1.0 (A5) | **Conditional — only on the M-b branch** |
+
+**Why V3 exists, and why it is conditional rather than routine.** Under **M-b** the routing repair
+does not ship, but the `tools.py` advertisement still does — §3.4's M-b row already says the
+`tools.py` half "has no safety component" and survives. What would then ship is **`V0 +
+capability`**, and none of V0, V1 or V2 is that prompt. The SPEC would have shipped, on its own
+most-likely-adverse branch, the one variant it never measured. So V3 is a **conditional obligation**:
+if and only if §5 records M-b, V3 is run at the **tool-reachable cell (N=20)** and across the **full
+control set (5 prompts × N=30)** before any prompt text is merged, and recorded in
+`verification-T3.md` §3.6. It is **not** work to do now, and it is **not** part of the gate — the
+gate is already decided by the time V3 becomes owed.
 
 | Task set | Purpose |
 |---|---|
@@ -406,8 +659,38 @@ temperature is stochastic and a single trial measures nothing.
 | **Tool-reachable** | A task `web_search` is the natural instrument for — measures whether the advertisement is acted on, which is §6.1's actual close condition |
 | **Control** | Conversational, opinion, and general-knowledge prompts that **must** stay DIRECT (D5) |
 
-**Gate:** if V2's Target refusal rate is not materially better than V0's, the outcome is **M-b**,
-T4 does not proceed on the account-access half, and `SPEC-MODEL-001` is opened. §6 S1.
+**Gate — restated at v1.1.0 so that it is decidable by a machine, and pre-registered so that it is
+decidable before the numbers exist.** ~~If V2's Target **refusal rate** is not materially better
+than V0's, the outcome is **M-b**.~~ **SUPERSEDED (A4).** *"Materially better" names no threshold,
+and "refusal rate" is not the quantity E6 defines. A refusal is a **human-coded subset** of DIRECT:
+a turn that routes DIRECT because the model chatted is not a refusal, and a reply carrying two
+fenced blocks classifies DIRECT (`CODE_BLOCK_RE.findall()` → `['']`, falsy — measured at
+`tests/test_source_seam.py:533-548`) while refusing nothing whatever. A gate whose endpoint is
+human-coded and whose classifier is machine-coded is not a gate; it is a conversation held after the
+fact.*
+
+**The gate is decided on the DIRECT rate**, machine-decided by `extract_last_python_block()`
+returning falsy (E6), on the **Target cell only**, at **N=30 per arm**. Writing `r0` for V0's Target
+DIRECT rate and `r2` for V2's:
+
+> **Proceed (M-a or M-c) if and only if `(r0 − r2) ≥ 0.40` absolute AND a one-sided Fisher exact
+> test rejects at `alpha = 0.05`. Otherwise the outcome is M-b.**
+
+Three properties of that rule, each of which is the reason a clause is in it:
+
+- **It is pre-registered.** The full rule is written into `verification-T3.md` §1 **before T2 runs**.
+  A threshold chosen after the numbers arrive is not a gate, and this SPEC has a stated preference
+  for M-a that would do the choosing.
+- **It is decided on ONE cell.** No other cell may rescue an M-b — not the off-example task, not the
+  tool-reachable task, not a favourable control. Consequently **no multiplicity correction is
+  applied, and none is needed**, because no second test is permitted to bear on the decision.
+- **It requires both clauses.** The absolute threshold alone would let a large-but-noisy difference
+  through; significance alone would let a 12pp difference through at N=30 and call it a repair.
+
+**Refusal rate survives as a secondary, human-coded overlay** (O3 supplies the verbatim replies)
+which is **reported and does not decide anything**. It is what distinguishes a model that declined
+from a model that chatted, and that distinction matters for `SPEC-MODEL-001`; it does not matter for
+the gate. §6 S1.
 
 ---
 
@@ -428,10 +711,41 @@ So this SPEC's verification is **not** unit coverage. It is:
   prompt names `web_search`, no prompt text mentions `os.environ` or a keychain. These are cheap,
   they run in CI, and they are what stops a later edit silently breaching N1/N2.
 
-`tools.py` **is** gated. The T5 change to its error handling carries a test like any other change to
-a gated module, and `MIN_PASSED` (`.github/workflows/ci.yml:316`, currently **544**) rises to a
+~~`tools.py` **is** gated. The T5 change to its error handling carries a test like any other change
+to a gated module.~~ **SUPERSEDED at v1.1.0 (A2) — `tools.py` is not gated, and it has never had a
+test.** Verified 2026-08-08, three independent ways:
+
+| Claim | Evidence |
+|---|---|
+| No coverage instrumentation | `pytest.ini:57-62` lists `--cov` for `memory`, `recall`, `vectorstore`, `params`, `settings`, `keychain`. There is **no `--cov=tools`** |
+| No per-file floor | `conftest.py:205-212`'s `PER_FILE_COVERAGE_TARGETS` holds six entries and **`tools.py` is not among them** |
+| No test file | `tests/` holds eleven `test_*.py` files. **`tests/test_tools.py` does not exist** |
+
+**The v1.0.0 claim traced to `structure.md:234`, which does not say what it was read as saying.**
+That line is a row in a table headed *"Why it is testable in isolation"* — it names
+`_ddg_instant()` / `_ddg_html()` / `web_search()` as **targets worth testing**, in a document
+section that is a testing proposal. It is an **aspiration, not a record of coverage**. Reading it as
+coverage is the same category error as reading a `Dockerfile` `COPY` line as proof that the import
+works, which is precisely what `SPEC-KEYCHAIN-001`'s AC-IMAGE was written to stop.
+
+**So T5's true size is larger than v1.0.0 stated**, and it is stated here so the estimate is not
+made twice:
+
+1. **`tests/test_tools.py` — the first test file `tools.py` has ever had.** Not "a test for the new
+   error path" bolted onto an existing suite; the suite itself.
+2. **Two-edit gate registration, both or neither.** `pytest.ini` gains `--cov=tools` **and**
+   `conftest.py`'s `PER_FILE_COVERAGE_TARGETS` gains a `tools.py` floor. `pytest.ini:42-46` records
+   what happens if only one lands: `cov.report(include=[...])` raises, conftest records *"coverage
+   unavailable"*, and the session fails — loudly, which that comment calls "the right direction for
+   this mistake to fail in". Landing only the `--cov` is the quieter mistake: the module is measured
+   and nothing enforces a floor on it.
+3. **A floor chosen and justified**, in the style `conftest.py:184-195` established for every module
+   added since — including the sentence about what to do if it is ever lowered.
+
+`MIN_PASSED` (`.github/workflows/ci.yml:316`, currently **544**) rises to a
 count read from a real `junitxml` run — **measured, never computed from an expected delta**. That
-discipline is `SPEC-KEYCHAIN-001`'s and it is adopted here explicitly (E5).
+discipline is `SPEC-KEYCHAIN-001`'s and it is adopted here explicitly (E5). **A2 makes that delta
+materially larger than v1.0.0 anticipated**, which is another reason E5 forbids computing it.
 
 ---
 
@@ -460,12 +774,14 @@ All five requirement types are represented.
 | **E4** | **WHEN** `SYSTEM_PROMPT` is amended, **THEN** `SPEC-KEYCHAIN-001` N2's line citation **shall** be corrected to its post-change range **in the same commit**, in both that SPEC's §6.4 and its §9 traceability table. The range is already 18 lines stale; a second generation makes §2.3's verification method unreproducible. |
 | **E5** | **WHEN** tests are added, **THEN** `MIN_PASSED` (`.github/workflows/ci.yml:316`, currently **544**) **shall** be raised to a count read from a real `junitxml` run, **measured and not computed** from an expected delta. |
 | **E6** | **WHEN** the probe is run, **THEN** a trial **shall** be classified DIRECT iff `extract_last_python_block()` (`main.py:447`) returns falsy — the same predicate as the production branch at `main.py:1032`. |
+| **E7** | **WHEN** a trial is recorded, **THEN** the record **shall** carry `len(CODE_BLOCK_RE.findall(reply))` alongside the classification. *A reply with **two** fenced blocks makes `findall()` return `['']` — falsy — so it classifies **DIRECT** while the model refused nothing at all (`tests/test_source_seam.py:533-548`). Without this field such a trial is indistinguishable from a refusal, silently inflating the secondary refusal rate and, worse, contaminating the DIRECT rate the gate is decided on. The field costs one integer per trial and it is the only way to tell a refusal apart from a formatting accident after the fact.* |
 
 ### 6.3 State-driven — IF/WHILE … THEN …
 
 | # | Requirement |
 |---|---|
-| **S1** | **IF** variant V2's Target refusal rate is not materially better than baseline V0's, **THEN** the refusal is safety-training-driven (**M-b**), the account-access half of this work **shall not** proceed as a prompt-design SPEC, `SPEC-ACCOUNT-001` **shall** remain gated closed, and `SPEC-MODEL-001` **shall** be opened. |
+| **S1** | ~~**IF** variant V2's Target **refusal rate** is not **materially better** than baseline V0's~~ — **RESTATED at v1.1.0 (A4)** — **IF** the pre-registered rule in `verification-T3.md` §1 is not satisfied on the Target cell — that is, **IF NOT** (`(r0 − r2) ≥ 0.40` absolute **AND** one-sided Fisher exact rejects at `alpha = 0.05`), where `r0` and `r2` are the **DIRECT rates** (E6) for V0 and V2 at **N=30 per arm** — **THEN** the refusal is safety-training-driven (**M-b**), the account-access half of this work **shall not** proceed as a prompt-design SPEC, `SPEC-ACCOUNT-001` **shall** remain gated closed, and `SPEC-MODEL-001` **shall** be opened. *Refusal rate is a human-coded subset of DIRECT and is reported alongside, but **shall not** decide this.* |
+| **S6** | **IF** the gate outcome is **M-b**, **THEN** variant **V3** (V0 + capability section, A5) **shall** be measured at the tool-reachable cell (N=20) and across the full control set (5 × N=30), and recorded in `verification-T3.md` §3.6, **before** any prompt text is merged. Under M-b what ships is `V0 + capability`, and V0, V1 and V2 are none of them that prompt. |
 | **S2** | **IF** a conversational, opinion, or general-knowledge prompt is given, **THEN** DIRECT **shall** still be selected at no worse than the measured pre-change rate. A capability advertisement **shall not** convert this into a product that writes and executes Python to answer "how are you". |
 | **S3** | **IF** `tools.py` is advertised in `SYSTEM_PROMPT`, **THEN** its known fragility (`tech.md` §8.7 — regex HTML parsing, swallowed exceptions) is in the product's hot path and **shall** be either fixed or explicitly accepted **in writing**, in this SPEC, with its reason. Silence is not acceptance. |
 | **S4** | **IF** a probe result is obtained against any model, quantisation or host other than `llama3.1:8b` on the compose sidecar, **THEN** it **shall** be labelled with what it was measured against and **shall not** be recorded as satisfying the gate. |
@@ -483,6 +799,8 @@ All five requirement types are represented.
 | **N6** | The regex-to-`bs4` rewrite of `_HTML_RESULT_RE` **shall not** be attempted here. It reverses `tools.py`'s stdlib-only contract (`tools.py:6`, `tools.py:82`, rationale at `main.py:510`) and that is a decision about the module, not a rider on a prompt change. §8 item 2. |
 | **N7** | `verification-T3.md` **shall not** contain placeholder figures, illustrative numbers, or example tables populated with plausible values. Empty cells, explicitly marked not-yet-run. A placeholder that survives one read becomes data. |
 | **N8** | No claim that `product.md` §6.1 is resolved **shall** be made on the strength of the prompt edit alone. §6.1 is closed by a **measured** rate at which the model actually reaches `web_search`, not by the presence of its name in a string. |
+| **N9** | New prompt material **shall not** use fenced code blocks. Every added example **shall** be **indented and unfenced**, in the shape of the existing examples at `main.py:146-153` and `main.py:162-163`. *Two independent reasons, both measured. (1) `tests/test_source_seam.py:547` asserts `prompt.count("```") == 2` — exactly one fenced block in the entire `SYSTEM_PROMPT` — so a fenced addition fails CI outright. (2) `tests/test_source_seam.py:533-548` records that when a reply carries two fenced blocks the closing fence of the first pairs with the opening fence of the second, `CODE_BLOCK_RE.findall()` returns `['']`, `extract_last_python_block()` returns the empty string, `if not code:` is TRUE, and the turn **silently classifies DIRECT** — no exception, no retry. A prompt that demonstrates multi-fence output by example teaches the model the exact form that produces the defect this SPEC exists to remove.* |
+| **N10** | The probe **shall not** pin `temperature`, **shall not** set a seed, and **shall not** pass an `options=` mapping. `main.py:209-221`'s `stream_llm()` passes no `options`, so production sampling is inherited by construction. *A temperature-0 measurement measures a different distribution from the one that produced the reported refusal, and would answer a question nobody asked. What the probe **shall** do instead is **record** the sampling parameters it inherited, from `client.show(MODEL_NAME)` at run time.* |
 
 ### 6.5 Optional — where possible
 
@@ -499,12 +817,15 @@ All five requirement types are represented.
 
 1. **`main.py` — `SYSTEM_PROMPT` only.** Repair the routing contradiction at `main.py:126-129`
    (D1); add a capability section below `main.py:166` (D2, D3, N3) naming the library set, network
-   egress and `from tools import web_search`, each with a worked example.
+   egress and `from tools import web_search`, each with a worked example — **indented and unfenced
+   (N9)**, so that `SYSTEM_PROMPT` still contains exactly one fenced block.
 2. **The probe harness.** Variants × task set × control set × N trials, classifying by
    `extract_last_python_block()` (E6). Committed and re-runnable (O1).
 3. **`verification-T3.md`** — structure now, figures only from runs (U6, N7).
 4. **`tools.py`** — make instant-answer failure visible (E3). `tools.py:90-91` only; the regex is
-   untouched (N6).
+   untouched (N6). **Plus, at v1.1.0 (A2): `tests/test_tools.py`, which does not exist today, and
+   the two-edit gate registration — `--cov=tools` in `pytest.ini` AND a `tools.py` floor in
+   `conftest.py`'s `PER_FILE_COVERAGE_TARGETS`, both or neither.** See §5.
 5. **Source-level assertions** — the `@param` passage is intact, the prompt names `web_search`, no
    prompt text mentions `os.environ` or a keychain. These enforce N1/N2 without a model in the loop.
 6. **Documentation, including the citation corrections this SPEC found:**
@@ -549,7 +870,13 @@ All five requirement types are represented.
 
 | Artefact | Location |
 |---|---|
-| Requirements | this file, §6 (U1–U6, E1–E6, S1–S5, N1–N8, O1–O4) |
+| Requirements | this file, §6 (U1–U6, E1–**E7**, S1–**S6**, N1–**N10**, O1–O4) |
+| The five v1.1.0 corrections, with what superseded what | this file, HISTORY v1.1.0 (A1–A5) |
+| The pre-registered gate rule | this file, §4; **normative copy** in `verification-T3.md` §1 |
+| The ports decision that made `http_code=000` look like an outage | `docker-compose.yml:28` |
+| The evidence that `tools.py` is ungated | `pytest.ini:57-62`; `conftest.py:205-212`; absence of `tests/test_tools.py` |
+| The two-fence trap, measured | `tests/test_source_seam.py:533-548`; the one-fence assertion at `:547` |
+| The sampling the probe inherits by construction | `main.py:209-221` (`stream_llm()` passes no `options=`) |
 | The diagnosis — three contradictory rules resolved by example | this file, HISTORY and §2.1 |
 | The one grep that explains two defects | this file, §2.2 |
 | The N2 resolution and its re-checkable method | this file, §2.3 |
@@ -572,12 +899,12 @@ All five requirement types are represented.
 
 | Requirement group | Primary acceptance criteria |
 |---|---|
-| U5, U6, E6, S4, S5, N7 | **AC-MEASURE** |
-| S1, §3.4 | **AC-GATE** |
+| U5, U6, E6, **E7**, S4, S5, N7, **N10** | **AC-MEASURE** |
+| S1, **S6**, §3.4 | **AC-GATE** |
 | U2, E1 | **AC-ROUTE** |
-| U1, U3, E2, N4, N8 | **AC-TOOLS** |
+| U1, U3, E2, N4, N8, **N9** | **AC-TOOLS** |
 | S2, D5 | **AC-CONTROL** |
-| U4, N1, N2, N3, E4 | **AC-N2** |
+| U4, N1, N2, N3, **N9**, E4 | **AC-N2** |
 | E3, S3, N6 | **AC-VISIBLE** |
 | E5, §7 item 7 | **AC-FLOOR** |
 | §7 item 6 | **AC-DOCS** |

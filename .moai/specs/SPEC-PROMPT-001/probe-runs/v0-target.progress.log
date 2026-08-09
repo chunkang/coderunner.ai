@@ -1,0 +1,40 @@
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-f530bf6cf999 Creating 
+ Container coderunnerai-coderunner-run-f530bf6cf999 Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/target#1/30 -> DIRECT (fences=0, 6.861s)
+  V0/target#2/30 -> CODE (fences=1, 93.535s)
+  V0/target#3/30 -> DIRECT (fences=0, 13.106s)
+  V0/target#4/30 -> DIRECT (fences=0, 17.807s)
+  V0/target#5/30 -> CODE (fences=1, 101.608s)
+  V0/target#6/30 -> DIRECT (fences=0, 7.522s)
+  V0/target#7/30 -> DIRECT (fences=0, 4.346s)
+  V0/target#8/30 -> CODE (fences=1, 145.264s)
+  V0/target#9/30 -> DIRECT (fences=0, 19.35s)
+  V0/target#10/30 -> CODE (fences=1, 153.407s)
+  V0/target#11/30 -> DIRECT (fences=0, 8.197s)
+  V0/target#12/30 -> DIRECT (fences=0, 42.844s)
+  V0/target#13/30 -> CODE (fences=1, 122.69s)
+  V0/target#14/30 -> DIRECT (fences=0, 6.806s)
+  V0/target#15/30 -> DIRECT (fences=0, 11.171s)
+  V0/target#16/30 -> CODE (fences=1, 104.511s)
+  V0/target#17/30 -> DIRECT (fences=0, 15.123s)
+  V0/target#18/30 -> DIRECT (fences=0, 9.893s)
+  V0/target#19/30 -> CODE (fences=1, 91.849s)
+  V0/target#20/30 -> DIRECT (fences=0, 28.44s)
+  V0/target#21/30 -> CODE (fences=1, 93.623s)
+  V0/target#22/30 -> DIRECT (fences=0, 6.086s)
+  V0/target#23/30 -> CODE (fences=1, 118.27s)
+  V0/target#24/30 -> CODE (fences=1, 103.199s)
+  V0/target#25/30 -> CODE (fences=1, 104.515s)
+  V0/target#26/30 -> CODE (fences=1, 80.261s)
+  V0/target#27/30 -> DIRECT (fences=0, 4.284s)
+  V0/target#28/30 -> CODE (fences=1, 146.241s)
+  V0/target#29/30 -> DIRECT (fences=0, 9.38s)
+  V0/target#30/30 -> DIRECT (fences=0, 4.251s)
+probe: wrote 30 record(s)
