@@ -1,0 +1,41 @@
+ Container coderunner-ollama Starting 
+ Container coderunner-ollama Started 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-bc55a20400cc Creating 
+ Container coderunnerai-coderunner-run-bc55a20400cc Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/c3_opinion#1/30 -> DIRECT (fences=0, 86.804s)
+  V0/c3_opinion#2/30 -> DIRECT (fences=0, 22.727s)
+  V0/c3_opinion#3/30 -> DIRECT (fences=0, 29.237s)
+  V0/c3_opinion#4/30 -> DIRECT (fences=0, 26.131s)
+  V0/c3_opinion#5/30 -> DIRECT (fences=0, 14.086s)
+  V0/c3_opinion#6/30 -> CODE (fences=1, 25.632s)
+  V0/c3_opinion#7/30 -> DIRECT (fences=0, 24.783s)
+  V0/c3_opinion#8/30 -> DIRECT (fences=0, 46.565s)
+  V0/c3_opinion#9/30 -> DIRECT (fences=0, 20.875s)
+  V0/c3_opinion#10/30 -> DIRECT (fences=0, 23.248s)
+  V0/c3_opinion#11/30 -> DIRECT (fences=0, 15.63s)
+  V0/c3_opinion#12/30 -> CODE (fences=1, 16.719s)
+  V0/c3_opinion#13/30 -> DIRECT (fences=0, 21.736s)
+  V0/c3_opinion#14/30 -> DIRECT (fences=0, 19.416s)
+  V0/c3_opinion#15/30 -> DIRECT (fences=0, 14.077s)
+  V0/c3_opinion#16/30 -> DIRECT (fences=0, 18.49s)
+  V0/c3_opinion#17/30 -> DIRECT (fences=0, 17.185s)
+  V0/c3_opinion#18/30 -> CODE (fences=1, 17.37s)
+  V0/c3_opinion#19/30 -> DIRECT (fences=0, 13.314s)
+  V0/c3_opinion#20/30 -> DIRECT (fences=0, 14.88s)
+  V0/c3_opinion#21/30 -> DIRECT (fences=0, 8.747s)
+  V0/c3_opinion#22/30 -> DIRECT (fences=0, 10.729s)
+  V0/c3_opinion#23/30 -> DIRECT (fences=0, 14.632s)
+  V0/c3_opinion#24/30 -> DIRECT (fences=0, 21.444s)
+  V0/c3_opinion#25/30 -> DIRECT (fences=0, 10.245s)
+  V0/c3_opinion#26/30 -> DIRECT (fences=0, 13.116s)
+  V0/c3_opinion#27/30 -> DIRECT (fences=0, 13.64s)
+  V0/c3_opinion#28/30 -> DIRECT (fences=0, 16.337s)
+  V0/c3_opinion#29/30 -> DIRECT (fences=0, 18.986s)
+  V0/c3_opinion#30/30 -> CODE (fences=1, 36.691s)
+probe: wrote 30 record(s)

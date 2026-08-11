@@ -1,0 +1,40 @@
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-b73327af44d7 Creating 
+ Container coderunnerai-coderunner-run-b73327af44d7 Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/c4_general_knowledge#1/30 -> CODE (fences=1, 42.738s)
+  V0/c4_general_knowledge#2/30 -> CODE (fences=1, 45.584s)
+  V0/c4_general_knowledge#3/30 -> CODE (fences=1, 29.475s)
+  V0/c4_general_knowledge#4/30 -> CODE (fences=1, 33.558s)
+  V0/c4_general_knowledge#5/30 -> CODE (fences=1, 38.138s)
+  V0/c4_general_knowledge#6/30 -> CODE (fences=1, 22.326s)
+  V0/c4_general_knowledge#7/30 -> CODE (fences=1, 20.864s)
+  V0/c4_general_knowledge#8/30 -> CODE (fences=1, 19.913s)
+  V0/c4_general_knowledge#9/30 -> CODE (fences=1, 28.497s)
+  V0/c4_general_knowledge#10/30 -> CODE (fences=1, 13.434s)
+  V0/c4_general_knowledge#11/30 -> CODE (fences=1, 24.24s)
+  V0/c4_general_knowledge#12/30 -> CODE (fences=1, 13.687s)
+  V0/c4_general_knowledge#13/30 -> CODE (fences=1, 21.641s)
+  V0/c4_general_knowledge#14/30 -> CODE (fences=1, 23.572s)
+  V0/c4_general_knowledge#15/30 -> CODE (fences=1, 16.193s)
+  V0/c4_general_knowledge#16/30 -> CODE (fences=1, 16.095s)
+  V0/c4_general_knowledge#17/30 -> CODE (fences=1, 16.744s)
+  V0/c4_general_knowledge#18/30 -> CODE (fences=1, 16.96s)
+  V0/c4_general_knowledge#19/30 -> CODE (fences=1, 15.975s)
+  V0/c4_general_knowledge#20/30 -> CODE (fences=1, 19.477s)
+  V0/c4_general_knowledge#21/30 -> CODE (fences=1, 17.523s)
+  V0/c4_general_knowledge#22/30 -> CODE (fences=1, 25.296s)
+  V0/c4_general_knowledge#23/30 -> CODE (fences=1, 19.068s)
+  V0/c4_general_knowledge#24/30 -> CODE (fences=1, 12.543s)
+  V0/c4_general_knowledge#25/30 -> CODE (fences=1, 20.033s)
+  V0/c4_general_knowledge#26/30 -> CODE (fences=1, 24.882s)
+  V0/c4_general_knowledge#27/30 -> CODE (fences=1, 21.927s)
+  V0/c4_general_knowledge#28/30 -> CODE (fences=1, 17.328s)
+  V0/c4_general_knowledge#29/30 -> CODE (fences=1, 33.295s)
+  V0/c4_general_knowledge#30/30 -> CODE (fences=1, 19.14s)
+probe: wrote 30 record(s)

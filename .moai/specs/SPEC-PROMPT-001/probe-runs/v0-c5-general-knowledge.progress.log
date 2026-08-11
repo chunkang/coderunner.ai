@@ -1,0 +1,74 @@
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-0513d3d89be7 Creating 
+ Container coderunnerai-coderunner-run-0513d3d89be7 Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/c5_general_knowledge#1/30 -> CODE (fences=1, 11.87s)
+  V0/c5_general_knowledge#2/30 -> CODE (fences=1, 20.087s)
+  V0/c5_general_knowledge#3/30 -> DIRECT (fences=0, 12.101s)
+  V0/c5_general_knowledge#4/30 -> CODE (fences=1, 13.838s)
+  V0/c5_general_knowledge#5/30 -> CODE (fences=1, 22.548s)
+  V0/c5_general_knowledge#6/30 -> CODE (fences=1, 23.209s)
+  V0/c5_general_knowledge#7/30 -> DIRECT (fences=0, 3.015s)
+  V0/c5_general_knowledge#8/30 -> DIRECT (fences=0, 5.314s)
+  V0/c5_general_knowledge#9/30 -> DIRECT (fences=0, 6.187s)
+  V0/c5_general_knowledge#10/30 -> CODE (fences=1, 31.681s)
+  V0/c5_general_knowledge#11/30 -> DIRECT (fences=0, 5.09s)
+  V0/c5_general_knowledge#12/30 -> CODE (fences=1, 27.121s)
+  V0/c5_general_knowledge#13/30 -> DIRECT (fences=0, 8.398s)
+  V0/c5_general_knowledge#14/30 -> CODE (fences=1, 10.424s)
+  V0/c5_general_knowledge#15/30 -> CODE (fences=1, 17.78s)
+  V0/c5_general_knowledge#16/30 -> CODE (fences=1, 15.827s)
+  V0/c5_general_knowledge#17/30 -> DIRECT (fences=0, 7.625s)
+  V0/c5_general_knowledge#18/30 -> DIRECT (fences=0, 9.865s)
+  V0/c5_general_knowledge#19/30 -> CODE (fences=1, 23.999s)
+  V0/c5_general_knowledge#20/30 -> DIRECT (fences=0, 5.799s)
+  V0/c5_general_knowledge#21/30 -> DIRECT (fences=0, 4.543s)
+  V0/c5_general_knowledge#22/30 -> CODE (fences=1, 27.959s)
+  V0/c5_general_knowledge#23/30 -> CODE (fences=1, 23.812s)
+  V0/c5_general_knowledge#24/30 -> CODE (fences=1, 19.409s)
+
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-764344b9bc2a Creating 
+ Container coderunnerai-coderunner-run-764344b9bc2a Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 24 recorded trial(s)
+  skip V0/c5_general_knowledge#0 (already recorded)
+  skip V0/c5_general_knowledge#1 (already recorded)
+  skip V0/c5_general_knowledge#2 (already recorded)
+  skip V0/c5_general_knowledge#3 (already recorded)
+  skip V0/c5_general_knowledge#4 (already recorded)
+  skip V0/c5_general_knowledge#5 (already recorded)
+  skip V0/c5_general_knowledge#6 (already recorded)
+  skip V0/c5_general_knowledge#7 (already recorded)
+  skip V0/c5_general_knowledge#8 (already recorded)
+  skip V0/c5_general_knowledge#9 (already recorded)
+  skip V0/c5_general_knowledge#10 (already recorded)
+  skip V0/c5_general_knowledge#11 (already recorded)
+  skip V0/c5_general_knowledge#12 (already recorded)
+  skip V0/c5_general_knowledge#13 (already recorded)
+  skip V0/c5_general_knowledge#14 (already recorded)
+  skip V0/c5_general_knowledge#15 (already recorded)
+  skip V0/c5_general_knowledge#16 (already recorded)
+  skip V0/c5_general_knowledge#17 (already recorded)
+  skip V0/c5_general_knowledge#18 (already recorded)
+  skip V0/c5_general_knowledge#19 (already recorded)
+  skip V0/c5_general_knowledge#20 (already recorded)
+  skip V0/c5_general_knowledge#21 (already recorded)
+  skip V0/c5_general_knowledge#22 (already recorded)
+  skip V0/c5_general_knowledge#23 (already recorded)
+  V0/c5_general_knowledge#25/30 -> CODE (fences=1, 33.767s)
+  V0/c5_general_knowledge#26/30 -> DIRECT (fences=0, 25.513s)
+  V0/c5_general_knowledge#27/30 -> DIRECT (fences=0, 2.215s)
+  V0/c5_general_knowledge#28/30 -> DIRECT (fences=0, 19.979s)
+  V0/c5_general_knowledge#29/30 -> CODE (fences=1, 34.513s)
+  V0/c5_general_knowledge#30/30 -> DIRECT (fences=0, 4.224s)
+probe: wrote 6 record(s)

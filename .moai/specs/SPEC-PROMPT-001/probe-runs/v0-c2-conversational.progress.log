@@ -1,0 +1,158 @@
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-91865348c093 Creating 
+ Container coderunnerai-coderunner-run-91865348c093 Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/c2_conversational#1/30 -> DIRECT (fences=0, 32.121s)
+  V0/c2_conversational#2/30 -> DIRECT (fences=0, 11.989s)
+  V0/c2_conversational#3/30 -> DIRECT (fences=0, 18.016s)
+  V0/c2_conversational#4/30 -> DIRECT (fences=0, 20.025s)
+  V0/c2_conversational#5/30 -> DIRECT (fences=0, 12.268s)
+  V0/c2_conversational#6/30 -> CODE (fences=1, 14.233s)
+  V0/c2_conversational#7/30 -> DIRECT (fences=0, 18.913s)
+  V0/c2_conversational#8/30 -> DIRECT (fences=0, 28.325s)
+  V0/c2_conversational#9/30 -> DIRECT (fences=0, 18.026s)
+  V0/c2_conversational#10/30 -> CODE (fences=1, 19.375s)
+  V0/c2_conversational#11/30 -> CODE (fences=1, 56.151s)
+  V0/c2_conversational#12/30 -> DIRECT (fences=0, 24.518s)
+  V0/c2_conversational#13/30 -> DIRECT (fences=0, 41.759s)
+  V0/c2_conversational#14/30 -> CODE (fences=1, 21.96s)
+
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-8e8ccd9264da Creating 
+ Container coderunnerai-coderunner-run-8e8ccd9264da Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 14 recorded trial(s)
+  skip V0/c2_conversational#0 (already recorded)
+  skip V0/c2_conversational#1 (already recorded)
+  skip V0/c2_conversational#2 (already recorded)
+  skip V0/c2_conversational#3 (already recorded)
+  skip V0/c2_conversational#4 (already recorded)
+  skip V0/c2_conversational#5 (already recorded)
+  skip V0/c2_conversational#6 (already recorded)
+  skip V0/c2_conversational#7 (already recorded)
+  skip V0/c2_conversational#8 (already recorded)
+  skip V0/c2_conversational#9 (already recorded)
+  skip V0/c2_conversational#10 (already recorded)
+  skip V0/c2_conversational#11 (already recorded)
+  skip V0/c2_conversational#12 (already recorded)
+  skip V0/c2_conversational#13 (already recorded)
+  V0/c2_conversational#15/30 -> DIRECT (fences=0, 134.065s)
+  V0/c2_conversational#16/30 -> CODE (fences=1, 20.443s)
+  V0/c2_conversational#17/30 -> DIRECT (fences=0, 16.172s)
+  V0/c2_conversational#18/30 -> CODE (fences=1, 69.123s)
+  V0/c2_conversational#19/30 -> DIRECT (fences=0, 15.557s)
+  V0/c2_conversational#20/30 -> DIRECT (fences=0, 29.309s)
+  V0/c2_conversational#21/30 -> CODE (fences=1, 27.762s)
+  V0/c2_conversational#22/30 -> DIRECT (fences=0, 13.788s)
+  V0/c2_conversational#23/30 -> DIRECT (fences=0, 14.611s)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/usr/local/lib/python3.11/site-packages/httpx/_transports/default.py", line 127, in __iter__
+    for part in self._httpcore_stream:
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_sync/connection_pool.py", line 407, in __iter__
+    raise exc from None
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_sync/connection_pool.py", line 403, in __iter__
+    for part in self._stream:
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_sync/http11.py", line 342, in __iter__
+    raise exc
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_sync/http11.py", line 334, in __iter__
+    for chunk in self._connection._receive_response_body(**kwargs):
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_sync/http11.py", line 203, in _receive_response_body
+    event = self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_sync/http11.py", line 213, in _receive_event
+    with map_exceptions({h11.RemoteProtocolError: RemoteProtocolError}):
+  File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/usr/local/lib/python3.11/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/work/probe/run_probe.py", line 339, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/work/probe/run_probe.py", line 329, in main
+    for record in iter_records(client, args.variant, selected, provenance, args.n, done):
+  File "/work/probe/run_probe.py", line 280, in iter_records
+    record = run_trial(client, variant_id, task, index, provenance)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/probe/run_probe.py", line 195, in run_trial
+    reply = "".join(stream_llm(client, messages))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/main.py", line 218, in stream_llm
+    for chunk in stream:
+  File "/usr/local/lib/python3.11/site-packages/ollama/_client.py", line 191, in inner
+    for line in r.iter_lines():
+  File "/usr/local/lib/python3.11/site-packages/httpx/_models.py", line 929, in iter_lines
+    for text in self.iter_text():
+  File "/usr/local/lib/python3.11/site-packages/httpx/_models.py", line 916, in iter_text
+    for byte_content in self.iter_bytes():
+  File "/usr/local/lib/python3.11/site-packages/httpx/_models.py", line 897, in iter_bytes
+    for raw_bytes in self.iter_raw():
+  File "/usr/local/lib/python3.11/site-packages/httpx/_models.py", line 951, in iter_raw
+    for raw_stream_bytes in self.stream:
+  File "/usr/local/lib/python3.11/site-packages/httpx/_client.py", line 153, in __iter__
+    for chunk in self._stream:
+  File "/usr/local/lib/python3.11/site-packages/httpx/_transports/default.py", line 126, in __iter__
+    with map_httpcore_exceptions():
+  File "/usr/local/lib/python3.11/contextlib.py", line 158, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "/usr/local/lib/python3.11/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)
+
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-77e6a17a4d21 Creating 
+ Container coderunnerai-coderunner-run-77e6a17a4d21 Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 23 recorded trial(s)
+  skip V0/c2_conversational#0 (already recorded)
+  skip V0/c2_conversational#1 (already recorded)
+  skip V0/c2_conversational#2 (already recorded)
+  skip V0/c2_conversational#3 (already recorded)
+  skip V0/c2_conversational#4 (already recorded)
+  skip V0/c2_conversational#5 (already recorded)
+  skip V0/c2_conversational#6 (already recorded)
+  skip V0/c2_conversational#7 (already recorded)
+  skip V0/c2_conversational#8 (already recorded)
+  skip V0/c2_conversational#9 (already recorded)
+  skip V0/c2_conversational#10 (already recorded)
+  skip V0/c2_conversational#11 (already recorded)
+  skip V0/c2_conversational#12 (already recorded)
+  skip V0/c2_conversational#13 (already recorded)
+  skip V0/c2_conversational#14 (already recorded)
+  skip V0/c2_conversational#15 (already recorded)
+  skip V0/c2_conversational#16 (already recorded)
+  skip V0/c2_conversational#17 (already recorded)
+  skip V0/c2_conversational#18 (already recorded)
+  skip V0/c2_conversational#19 (already recorded)
+  skip V0/c2_conversational#20 (already recorded)
+  skip V0/c2_conversational#21 (already recorded)
+  skip V0/c2_conversational#22 (already recorded)
+  V0/c2_conversational#24/30 -> DIRECT (fences=0, 52.387s)
+  V0/c2_conversational#25/30 -> DIRECT (fences=0, 12.01s)
+  V0/c2_conversational#26/30 -> DIRECT (fences=0, 12.719s)
+  V0/c2_conversational#27/30 -> CODE (fences=1, 16.187s)
+  V0/c2_conversational#28/30 -> CODE (fences=1, 18.448s)
+  V0/c2_conversational#29/30 -> CODE (fences=1, 16.166s)
+  V0/c2_conversational#30/30 -> DIRECT (fences=0, 9.496s)
+probe: wrote 7 record(s)

@@ -1,0 +1,104 @@
+(eval):1: command not found: timeout
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-ea1a60c15aba Creating 
+ Container coderunnerai-coderunner-run-ea1a60c15aba Created 
+probe: variant=V1 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V1/target#1/30 -> DIRECT (fences=0, 57.742s)
+  V1/target#2/30 -> DIRECT (fences=0, 5.291s)
+  V1/target#3/30 -> DIRECT (fences=0, 5.583s)
+  V1/target#4/30 -> DIRECT (fences=0, 3.654s)
+  V1/target#5/30 -> DIRECT (fences=0, 2.577s)
+  V1/target#6/30 -> DIRECT (fences=0, 3.314s)
+  V1/target#7/30 -> CODE (fences=1, 97.329s)
+  V1/target#8/30 -> CODE (fences=1, 90.699s)
+  V1/target#9/30 -> CODE (fences=1, 67.838s)
+  V1/target#10/30 -> DIRECT (fences=0, 4.088s)
+  V1/target#11/30 -> DIRECT (fences=0, 2.815s)
+  V1/target#12/30 -> CODE (fences=1, 82.062s)
+  V1/target#13/30 -> DIRECT (fences=0, 3.9s)
+  V1/target#14/30 -> CODE (fences=1, 65.216s)
+  V1/target#15/30 -> CODE (fences=1, 74.061s)
+  V1/target#16/30 -> DIRECT (fences=0, 8.633s)
+  V1/target#17/30 -> DIRECT (fences=0, 1.859s)
+
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-66a4b31c083c Creating 
+ Container coderunnerai-coderunner-run-66a4b31c083c Created 
+probe: variant=V1 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 17 recorded trial(s)
+  skip V1/target#0 (already recorded)
+  skip V1/target#1 (already recorded)
+  skip V1/target#2 (already recorded)
+  skip V1/target#3 (already recorded)
+  skip V1/target#4 (already recorded)
+  skip V1/target#5 (already recorded)
+  skip V1/target#6 (already recorded)
+  skip V1/target#7 (already recorded)
+  skip V1/target#8 (already recorded)
+  skip V1/target#9 (already recorded)
+  skip V1/target#10 (already recorded)
+  skip V1/target#11 (already recorded)
+  skip V1/target#12 (already recorded)
+  skip V1/target#13 (already recorded)
+  skip V1/target#14 (already recorded)
+  skip V1/target#15 (already recorded)
+  skip V1/target#16 (already recorded)
+  V1/target#18/30 -> DIRECT (fences=0, 10.256s)
+  V1/target#19/30 -> CODE (fences=1, 82.859s)
+  V1/target#20/30 -> CODE (fences=1, 64.665s)
+  V1/target#21/30 -> DIRECT (fences=0, 48.502s)
+  V1/target#22/30 -> CODE (fences=1, 55.542s)
+  V1/target#23/30 -> CODE (fences=1, 85.917s)
+  V1/target#24/30 -> DIRECT (fences=0, 3.575s)
+  V1/target#25/30 -> DIRECT (fences=0, 3.954s)
+  V1/target#26/30 -> CODE (fences=1, 125.695s)
+
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-13b91483d97a Creating 
+ Container coderunnerai-coderunner-run-13b91483d97a Created 
+probe: variant=V1 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 26 recorded trial(s)
+  skip V1/target#0 (already recorded)
+  skip V1/target#1 (already recorded)
+  skip V1/target#2 (already recorded)
+  skip V1/target#3 (already recorded)
+  skip V1/target#4 (already recorded)
+  skip V1/target#5 (already recorded)
+  skip V1/target#6 (already recorded)
+  skip V1/target#7 (already recorded)
+  skip V1/target#8 (already recorded)
+  skip V1/target#9 (already recorded)
+  skip V1/target#10 (already recorded)
+  skip V1/target#11 (already recorded)
+  skip V1/target#12 (already recorded)
+  skip V1/target#13 (already recorded)
+  skip V1/target#14 (already recorded)
+  skip V1/target#15 (already recorded)
+  skip V1/target#16 (already recorded)
+  skip V1/target#17 (already recorded)
+  skip V1/target#18 (already recorded)
+  skip V1/target#19 (already recorded)
+  skip V1/target#20 (already recorded)
+  skip V1/target#21 (already recorded)
+  skip V1/target#22 (already recorded)
+  skip V1/target#23 (already recorded)
+  skip V1/target#24 (already recorded)
+  skip V1/target#25 (already recorded)
+  V1/target#27/30 -> DIRECT (fences=0, 43.646s)
+  V1/target#28/30 -> DIRECT (fences=0, 11.714s)
+  V1/target#29/30 -> DIRECT (fences=0, 10.318s)
+  V1/target#30/30 -> DIRECT (fences=0, 9.98s)
+probe: wrote 4 record(s)

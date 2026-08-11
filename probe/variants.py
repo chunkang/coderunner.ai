@@ -72,11 +72,32 @@ _V1_ANCHOR = (
     "you don't have), follow the DIRECT protocol."
 )
 
+# LINE-COUNT-NEUTRAL, TWO LINES FOR TWO, AND THAT IS A CONSTRAINT RATHER THAN A
+# preference. The anchor above is main.py:128-129. Anything longer pushes the
+# @param passage down from :158-166, which is the third generation of the stale
+# citation N3 exists to prevent; SPEC-KEYCHAIN-001 N2 already cites it 18 lines
+# off.
+#
+# The edit could not simply be widened to cover the whole :126-129 paragraph
+# either: tests/test_probe.py:237 asserts `V0[:200] in text` for every variant,
+# and V0's first 200 characters run into main.py:127. So the repair is confined
+# to the two lines that actually carry the contradiction, and it has to fit in
+# them. Both lines stay within V0's own 76-column measure.
+#
+# WHAT WAS TRADED AWAY, recorded rather than quietly dropped. An earlier draft of
+# this repair ran to FOUR lines and closed with "Not holding the data yourself is
+# NOT a reason to choose DIRECT: if the answer is reachable over the network, or
+# computable, that is CODE." That sentence answers trial #8 of the V0 Target cell
+# in its own words — it justified DIRECT with "which I don't have access to" —
+# and it does not fit in two lines at this width. What survives carries D1's
+# semantics but not its emphasis: DIRECT is now CONJUNCTIVE (conversational,
+# opinion or general knowledge AND unanswerable by fetch or computation) where
+# V0's was disjunctive. V1 is therefore a WEAKER treatment than the discarded
+# draft, and if the gate records M-b that weakening is a live alternative
+# explanation rather than a settled one.
 _V1_REPAIR = (
-    "question is conversational, opinion, or general knowledge, AND no\n"
-    "computation and no fetch would answer it), follow the DIRECT protocol.\n"
-    "Not holding the data yourself is NOT a reason to choose DIRECT: if the\n"
-    "answer is reachable over the network, or computable, that is CODE."
+    "question is conversational, opinion, or general knowledge, and neither a\n"
+    "fetch nor a computation would answer it), follow the DIRECT protocol."
 )
 
 V1 = _replace_once(V0, _V1_ANCHOR, _V1_REPAIR, what="V1")
@@ -102,27 +123,46 @@ _INSERT_AFTER = (
     "     it is masked when typed. Never emit a second fenced block for these."
 )
 
-_CAPABILITY_SECTION = textwrap.dedent(
-    """
-       - A helper module is copied next to your script in every sandbox, so
-         "from tools import web_search" resolves with no PYTHONPATH set. It is
-         stdlib-only and returns a list of dicts keyed title, snippet, url,
-         source. Reach for it when no specific API fits the question:
+# INDENTATION IS LOAD-BEARING HERE AND textwrap.dedent ALONE GETS IT WRONG.
+# V0 is itself already dedented, and its CODE-protocol "Rules:" list sits at
+# column 3, continuations at 5, worked examples at 7 (measured against V0:
+# "- Available libraries:" at 3, "path), do NOT call input()." at 5,
+# "# @param city:" at 7). A dedent()ed block lands its bullets at column 0 —
+# which in this prompt is the column of "CODE protocol:" and "DIRECT protocol
+# (no code needed):" — so the new material would read as two new TOP-LEVEL
+# sections wedged between the Rules list and "4. Stop after the fenced block."
+#
+# That is not a cosmetic complaint. N9 requires added examples to be "indented
+# and unfenced, in the shape of the existing examples at main.py:146-153 and
+# main.py:162-163", and column 0 is not that shape. The body below is therefore
+# written with the bullet at column 0 for readability IN THIS FILE and pushed to
+# column 3 by indent(), which reproduces V0's 3 / 5 / 7 ladder exactly.
+# indent()'s default predicate leaves blank lines blank, so no trailing
+# whitespace is introduced.
+_CAPABILITY_SECTION = textwrap.indent(
+    textwrap.dedent(
+        """
+        - A helper module is copied next to your script in every sandbox, so
+          "from tools import web_search" resolves with no PYTHONPATH set. It is
+          stdlib-only and returns a list of dicts keyed title, snippet, url,
+          source. Reach for it when no specific API fits the question:
 
-             from tools import web_search
-             hits = web_search("uv python package manager criticism", limit=5)
-             for hit in hits:
-                 print(hit["title"], hit["url"])
+            from tools import web_search
+            hits = web_search("uv python package manager criticism", limit=5)
+            for hit in hits:
+                print(hit["title"], hit["url"])
 
-       - Anything reachable over the network is in scope, not only the three
-         sites exampled above. A public JSON API, an HTML page, or a search
-         through the helper are all ordinary CODE work:
+        - Anything reachable over the network is in scope, not only the three
+          sites exampled above. A public JSON API, an HTML page, or a search
+          through the helper are all ordinary CODE work:
 
-             import requests
-             r = requests.get("https://api.github.com/repos/python/cpython",
-                              timeout=10, headers={"User-Agent": "coderunner"})
-             print(r.json()["open_issues_count"])
-    """
+            import requests
+            r = requests.get("https://api.github.com/repos/python/cpython",
+                             timeout=10, headers={"User-Agent": "coderunner"})
+            print(r.json()["open_issues_count"])
+        """
+    ),
+    "   ",
 ).rstrip()
 
 V2 = _replace_once(V1, _INSERT_AFTER, _INSERT_AFTER + "\n" + _CAPABILITY_SECTION, what="V2")

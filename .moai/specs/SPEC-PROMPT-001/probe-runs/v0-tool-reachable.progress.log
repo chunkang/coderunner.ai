@@ -1,0 +1,30 @@
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-401d8fea352e Creating 
+ Container coderunnerai-coderunner-run-401d8fea352e Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/tool_reachable#1/20 -> CODE (fences=1, 37.945s)
+  V0/tool_reachable#2/20 -> CODE (fences=1, 66.38s)
+  V0/tool_reachable#3/20 -> CODE (fences=1, 55.788s)
+  V0/tool_reachable#4/20 -> CODE (fences=1, 68.786s)
+  V0/tool_reachable#5/20 -> CODE (fences=1, 41.93s)
+  V0/tool_reachable#6/20 -> CODE (fences=1, 48.337s)
+  V0/tool_reachable#7/20 -> CODE (fences=1, 62.004s)
+  V0/tool_reachable#8/20 -> CODE (fences=1, 42.477s)
+  V0/tool_reachable#9/20 -> CODE (fences=1, 52.821s)
+  V0/tool_reachable#10/20 -> CODE (fences=1, 60.101s)
+  V0/tool_reachable#11/20 -> CODE (fences=1, 97.942s)
+  V0/tool_reachable#12/20 -> CODE (fences=1, 46.099s)
+  V0/tool_reachable#13/20 -> CODE (fences=1, 68.953s)
+  V0/tool_reachable#14/20 -> CODE (fences=1, 48.856s)
+  V0/tool_reachable#15/20 -> CODE (fences=2, 49.866s)
+  V0/tool_reachable#16/20 -> CODE (fences=1, 56.151s)
+  V0/tool_reachable#17/20 -> CODE (fences=1, 65.194s)
+  V0/tool_reachable#18/20 -> CODE (fences=1, 81.244s)
+  V0/tool_reachable#19/20 -> CODE (fences=1, 60.832s)
+  V0/tool_reachable#20/20 -> CODE (fences=1, 53.168s)
+probe: wrote 20 record(s)

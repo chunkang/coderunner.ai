@@ -1,0 +1,40 @@
+ Container coderunner-ollama Running 
+ Container coderunner-ollama Waiting 
+ Container coderunner-ollama Healthy 
+ Container coderunnerai-coderunner-run-705f6f869cbb Creating 
+ Container coderunnerai-coderunner-run-705f6f869cbb Created 
+probe: variant=V0 host=http://ollama:11434
+probe: model=llama3.1:8b digest=46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e
+probe: quantisation=Q4_K_M
+probe: resuming past 0 recorded trial(s)
+  V0/c1_conversational#1/30 -> DIRECT (fences=0, 9.445s)
+  V0/c1_conversational#2/30 -> DIRECT (fences=0, 9.645s)
+  V0/c1_conversational#3/30 -> DIRECT (fences=0, 12.381s)
+  V0/c1_conversational#4/30 -> DIRECT (fences=0, 13.197s)
+  V0/c1_conversational#5/30 -> DIRECT (fences=0, 8.672s)
+  V0/c1_conversational#6/30 -> DIRECT (fences=0, 17.068s)
+  V0/c1_conversational#7/30 -> DIRECT (fences=0, 4.656s)
+  V0/c1_conversational#8/30 -> DIRECT (fences=0, 2.591s)
+  V0/c1_conversational#9/30 -> DIRECT (fences=0, 1.499s)
+  V0/c1_conversational#10/30 -> DIRECT (fences=0, 6.412s)
+  V0/c1_conversational#11/30 -> DIRECT (fences=0, 12.148s)
+  V0/c1_conversational#12/30 -> DIRECT (fences=0, 15.983s)
+  V0/c1_conversational#13/30 -> DIRECT (fences=0, 37.748s)
+  V0/c1_conversational#14/30 -> DIRECT (fences=0, 4.676s)
+  V0/c1_conversational#15/30 -> DIRECT (fences=0, 2.121s)
+  V0/c1_conversational#16/30 -> DIRECT (fences=0, 8.403s)
+  V0/c1_conversational#17/30 -> DIRECT (fences=0, 2.627s)
+  V0/c1_conversational#18/30 -> DIRECT (fences=0, 12.299s)
+  V0/c1_conversational#19/30 -> DIRECT (fences=0, 4.001s)
+  V0/c1_conversational#20/30 -> DIRECT (fences=0, 6.578s)
+  V0/c1_conversational#21/30 -> DIRECT (fences=0, 7.728s)
+  V0/c1_conversational#22/30 -> DIRECT (fences=0, 8.633s)
+  V0/c1_conversational#23/30 -> DIRECT (fences=0, 3.835s)
+  V0/c1_conversational#24/30 -> DIRECT (fences=0, 8.301s)
+  V0/c1_conversational#25/30 -> DIRECT (fences=0, 6.631s)
+  V0/c1_conversational#26/30 -> DIRECT (fences=0, 5.939s)
+  V0/c1_conversational#27/30 -> DIRECT (fences=0, 5.884s)
+  V0/c1_conversational#28/30 -> DIRECT (fences=0, 4.416s)
+  V0/c1_conversational#29/30 -> DIRECT (fences=0, 2.125s)
+  V0/c1_conversational#30/30 -> DIRECT (fences=0, 6.524s)
+probe: wrote 30 record(s)
