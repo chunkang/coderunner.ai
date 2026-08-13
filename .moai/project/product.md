@@ -1,7 +1,7 @@
 # CodeRunner.AI — Product Overview
 
 > Scope note: this document describes the CodeRunner.AI product only — the files
-> `coderunner`, `main.py`, `tools.py`, `Dockerfile`, `docker-compose.yml`,
+> `coderunner`, `install.sh`, `main.py`, `tools.py`, `Dockerfile`, `docker-compose.yml`,
 > `requirements.txt`, `README.md`, `LICENSE`. The `.claude/` and `.moai/`
 > directories (including `CLAUDE.md`) are AI-agent tooling checked into the same
 > repository and are **not** part of the product.

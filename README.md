@@ -14,6 +14,18 @@ Local, agentic Python code interpreter powered by LLaMA (via [Ollama](https://ol
 
 The launcher will install Docker (if missing), pull the model on first run, and drop you into an interactive terminal. When you exit, the container and the bundled Ollama sidecar are shut down so the machine reclaims its RAM. Model weights persist in a Docker volume so subsequent launches are instant.
 
+### Running it from anywhere
+
+```bash
+./install.sh                        # put a `coderunner` command in ~/bin
+./install.sh --dir /usr/local/bin   # somewhere else
+./install.sh --uninstall            # remove it
+```
+
+This puts a command on your `PATH` and nothing more — same launcher, same container, same behaviour. It writes a small wrapper that runs the launcher from wherever the repository lives, so the repository is neither moved nor copied and `git pull` updates the installed command too. A symlink would not work: the launcher resolves its own directory without following symlinks, so through one it would look for `docker-compose.yml` in `~/bin`.
+
+If `~/bin` is not on your `PATH`, the installer says so and prints the line to add. It does not edit your shell startup file.
+
 **The app container is ephemeral, but the machine is no longer left untouched.** Solution memory is **on by default**, and it writes every successful turn — your task, the model's reasoning, the script it ran, the real stdout, and a 768-dimension embedding of the task — to the Docker named volume `coderunner_app_data`. That volume is real, persistent, unencrypted host storage:
 
 - **How big.** About 32 KB with a couple of records. At the default 100,000-record cap, roughly **0.9 GB** — 618 MB of vectors plus around 8 KB of text per record.
@@ -196,6 +208,7 @@ A user who has never run `--set-secret` gets no line at all. That is a state, no
 | File | Purpose |
 | --- | --- |
 | `coderunner` | Bash launcher — Docker bootstrap and session lifecycle |
+| `install.sh` | Puts a `coderunner` command on `PATH` by writing a wrapper that execs the launcher in place. Bash 3.2 compatible; edits no shell startup file |
 | `main.py` | REPL, LLM streaming, code extraction, executor, retry loop |
 | `memory.py` | Solution memory core — record model, truncation, config parsing, `/memory` commands, prompt-block formatting. Stdlib only |
 | `recall.py` | The embedding seam — the only module that touches `ollama` for embeddings |

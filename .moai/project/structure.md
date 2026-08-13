@@ -11,6 +11,7 @@
 ```
 CodeRunner.AI/
 ├── coderunner                  # PRODUCT · bash launcher (executable, 229 lines)
+├── install.sh                  # PRODUCT · installs a `coderunner` command on PATH (executable)
 ├── main.py                     # PRODUCT · application, single module (512 lines)
 ├── tools.py                    # PRODUCT · sandbox-importable helper (99 lines)
 ├── Dockerfile                  # PRODUCT · runtime image (32 lines)
@@ -61,6 +62,7 @@ tooling, not to the product.
 
 | File | Lines | Purpose |
 | --- | ---: | --- |
+| `install.sh` | 168 | Writes a wrapper to `~/bin/coderunner` (or `--dir`) that `exec`s this repository's launcher by absolute path. A symlink cannot be used: `coderunner:12` resolves its own directory with `dirname "${BASH_SOURCE[0]}"`, which does not follow one. `exec` is load-bearing — it hands the launcher the caller's TTY and lets its EXIT trap still stop the Ollama sidecar. Gates `--force`/`--uninstall` on a marker comment so it never destroys a file it did not write, and edits no shell startup file. Bash 3.2 compatible. Tested at `tests/test_install_source.py`. |
 | `coderunner` | 229 | Bash launcher. Installs and starts Docker, detects compose, builds the image on first run, brings up the Ollama sidecar and pulls the model, installs a cleanup trap, runs the app container ephemerally, and implements `--doctor`. Strict mode `set -Eeuo pipefail` at `coderunner:10`; `cd`s to its own directory at `coderunner:12-13`. |
 | `main.py` | 512 | The entire application: configuration, system prompt, conversation model, LLM streaming, code extraction, subprocess executor, Rich renderers, the agentic loop, and the REPL. Container entry point per `Dockerfile:32`. |
 | `tools.py` | 99 | Stdlib-only `web_search()` helper intended for import by generated scripts. Copied into each sandbox by `main.py:210-211`. Currently unreachable — see Section 5.3. |
