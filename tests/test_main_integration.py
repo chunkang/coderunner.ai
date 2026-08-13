@@ -2176,3 +2176,88 @@ def test_the_system_prompt_never_learns_that_a_keychain_exists() -> None:
 
     for forbidden in ("os.environ", "environ", "keychain", "CODERUNNER_SECRET"):
         assert forbidden not in prompt, f"SYSTEM_PROMPT mentions {forbidden!r}"
+
+
+# ------------------------------------------------------------------------------
+# SPEC-BANNER-001 — the wordmark, and not erasing what the launcher said
+# ------------------------------------------------------------------------------
+
+
+def _banner_console(width: int, *, tty: bool) -> tuple[Console, io.StringIO]:
+    buffer = io.StringIO()
+    return Console(file=buffer, width=width, force_terminal=tty), buffer
+
+
+def test_the_logo_fits_the_width_it_declares_it_needs() -> None:
+    """Self-consistency, and the reason LOGO_MIN_WIDTH is not a round number.
+
+    A logo wider than the terminal wraps, and a wrapped logo is worse than no
+    logo — the letters break mid-glyph and the result reads as corruption. The
+    threshold is derived from the art rather than chosen, so widening the art
+    without widening the gate fails here instead of in somebody's terminal.
+    """
+    widest = max(len(line) for line in main.LOGO.splitlines())
+    assert widest <= main.LOGO_MIN_WIDTH, (
+        f"the logo is {widest} columns but is printed at {main.LOGO_MIN_WIDTH}"
+    )
+    assert len(main.LOGO.splitlines()) == 5, "the logo is no longer five rows"
+
+
+def test_the_logo_is_printed_when_the_terminal_is_wide_enough(monkeypatch) -> None:
+    console, buffer = _banner_console(main.LOGO_MIN_WIDTH, tty=False)
+    monkeypatch.setattr(main, "console", console)
+    main.show_banner()
+    assert main.LOGO.splitlines()[0] in buffer.getvalue()
+
+
+def test_the_logo_is_suppressed_rather_than_wrapped_on_a_narrow_terminal(monkeypatch) -> None:
+    """80 columns is still Terminal.app's default, and this art needs 61 of them
+    plus slack. One column under the gate must lose the logo, not fold it."""
+    console, buffer = _banner_console(main.LOGO_MIN_WIDTH - 1, tty=False)
+    monkeypatch.setattr(main, "console", console)
+    main.show_banner()
+    rendered = buffer.getvalue()
+    assert main.LOGO.splitlines()[0] not in rendered
+    assert "CodeRunner" in rendered, "the text banner must still appear"
+
+
+def test_the_screen_is_not_cleared_when_the_launcher_warned(monkeypatch) -> None:
+    """The whole reason `_clear_is_safe` exists rather than a bare console.clear().
+
+    SPEC-KEYCHAIN-001 U4 requires exactly one status line per launch telling the
+    user a declared secret will be prompted rather than sourced. It is printed
+    by the launcher, before this process starts. Clearing here erases it.
+    """
+    console, _ = _banner_console(100, tty=True)
+    monkeypatch.setattr(main, "console", console)
+
+    monkeypatch.delenv("CODERUNNER_LAUNCH_WARNED", raising=False)
+    assert main._clear_is_safe() is True
+
+    monkeypatch.setenv("CODERUNNER_LAUNCH_WARNED", "1")
+    assert main._clear_is_safe() is False
+
+
+def test_the_screen_is_not_cleared_when_output_is_not_a_terminal(monkeypatch) -> None:
+    """Clear codes in a pipe or a log corrupt it."""
+    console, _ = _banner_console(100, tty=False)
+    monkeypatch.setattr(main, "console", console)
+    monkeypatch.delenv("CODERUNNER_LAUNCH_WARNED", raising=False)
+    assert main._clear_is_safe() is False
+
+
+def test_show_banner_actually_honours_the_clear_decision(monkeypatch) -> None:
+    """The predicate and its use, asserted together — a correct predicate that
+    nothing consults is the failure mode this repository met twice this week."""
+    console, _ = _banner_console(100, tty=True)
+    monkeypatch.setattr(main, "console", console)
+    calls: list[int] = []
+    monkeypatch.setattr(console, "clear", lambda *a, **k: calls.append(1))
+
+    monkeypatch.setenv("CODERUNNER_LAUNCH_WARNED", "1")
+    main.show_banner()
+    assert calls == [], "show_banner cleared over the launcher's warning"
+
+    monkeypatch.delenv("CODERUNNER_LAUNCH_WARNED", raising=False)
+    main.show_banner()
+    assert calls == [1], "show_banner did not clear when it was safe to"

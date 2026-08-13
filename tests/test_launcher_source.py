@@ -553,3 +553,44 @@ def test_the_never_policy_no_longer_bounds_the_exposure_and_says_so() -> None:
         text = (_ROOT / name).read_text(encoding="utf-8")
         assert "never" in text
         assert "Config.Env" in text or "docker inspect" in text
+
+
+# ------------------------------------------------------------------------------
+# The banner must not erase what the launcher said (SPEC-BANNER-001)
+# ------------------------------------------------------------------------------
+
+
+def test_warn_records_that_the_launcher_said_something() -> None:
+    """`main.py` clears the terminal at startup, and must not when there is
+    something on it worth reading.
+
+    Five of this file's six `warn()` calls are SPEC-KEYCHAIN-001 U4 degradation
+    lines — "'api_key' is registered but could not be read — it will be
+    prompted." — and every one of them is printed BEFORE the container starts.
+    A banner that wipes the screen erases them in the instant before they are
+    read, and the user then meets a getpass prompt with no idea why. Recording
+    the fact in `warn()` itself rather than at each call site is what makes that
+    impossible to forget at the sixth.
+    """
+    text = code()
+    assert "LAUNCH_WARNED=0" in text, "the flag is never initialised"
+    assert re.search(r"warn\(\)\s*\{\s*LAUNCH_WARNED=1;", text), (
+        "warn() no longer records that it fired; main.py will clear over it"
+    )
+
+
+def test_the_launch_warned_flag_reaches_the_container_only_when_it_is_set() -> None:
+    """Passed conditionally, so a clean launch is byte-for-byte what it was.
+
+    The variable is exported and the `-e` carries a BARE NAME, which
+    test_every_dash_e_in_the_launcher_carries_a_bare_name above asserts over
+    every `-e` in the file — including this one, so N4 covers it without
+    needing a second copy here.
+    """
+    text = code()
+    assert 'if [ "$LAUNCH_WARNED" -eq 1 ]; then' in text, "the flag is passed unconditionally"
+    assert "export CODERUNNER_LAUNCH_WARNED=1" in text
+    assert "RUN_ENV+=(-e CODERUNNER_LAUNCH_WARNED)" in text
+    assert "CODERUNNER_LAUNCH_WARNED" in (_ROOT / "main.py").read_text(encoding="utf-8"), (
+        "the launcher exports a name main.py never reads"
+    )
