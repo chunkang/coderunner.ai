@@ -5,17 +5,27 @@
 
 ---
 
-## STATUS: BASELINE COMPLETE, GATE DECIDED — §1, §2 and §3.1 complete; §3.2–§3.4, §3.6 and §4 NOT RUN
+## STATUS: GATE DECIDED (M-b, UNCHANGED) — §1, §2, §3.1 and §3.6's Target cell complete; §3.2–§3.4, §3.6's two OWED cells and §4 NOT RUN
 
 **Created 2026-08-08 (v1.0.0) with its structure in place and every result cell empty. Amended
 2026-08-08 (v1.1.0) to write the gate rule and the trial counts into §1.1 and §1.2 BEFORE T2 ran.**
 The V0 Target cell was then run on 2026-08-09; the remaining seven V0 cells on 2026-08-09/10,
-completing the baseline at **220 trials**; V1 and V2 Target on 2026-08-10.
+completing the baseline at **220 trials**; V1 and V2 Target on 2026-08-10; **V3 Target on
+2026-08-12**. **Total: 310 records across four arms.**
 
 **THE GATE IS DECIDED AND THE OUTCOME IS M-b** (§5). `r2 = 7/30 = 23.3 %` against `r0 = 17/30 =
 56.7 %`. The absolute clause required `(r0 − r2) ≥ 0.40` and it measured **0.3333**; V2 needed
 `k2 ≤ 5` DIRECT trials in 30 and recorded **7**. Fisher rejects (`p = 0.008428`) and **that does not
 matter**, because §1.1 requires both clauses. **`plan.md` T4's routing half does not proceed.**
+
+> **V3 HAS NOW RUN AT THE TARGET CELL AND IT DOES NOT TOUCH THE VERDICT. IT OVERTURNS §3.1's
+> INTERPRETATION.** `r3 = 12/30 = 40.0 %`, 95% Wilson **[24.6 %, 57.7 %]** — worse than V2 on the
+> gated quantity, and clearing **neither** clause of §1.1 (`r0 − r3 = 0.1667`; Fisher
+> `p = 0.150734`). **§5's outcome is unchanged and was not revisited.** What changed is §3.1's
+> attribution: it concluded that the routing repair does nothing and the capability advertisement
+> does everything, and **that conclusion is wrong** — see **§3.6**, which supersedes it and states
+> the reason (two arms cannot separate a main effect from an interaction; V3 is the cell that
+> completes the 2 × 2 and bears on it).
 
 > **THE ORDERING IS NOT CORROBORATED BY GIT, AND IT NEVER CAN BE. READ §1.0 BEFORE READING THE
 > GATE.** An earlier draft of this header claimed §1.1 and §1.2 "were committed while §2 was still
@@ -25,24 +35,28 @@ matter**, because §1.1 requires both clauses. **`plan.md` T4's routing half doe
 | Section | State |
 |---|---|
 | §1.1 decision rule, §1.2 trial counts | **Written before T2 ran — but see §1.0: not git-corroborated** |
-| §1.3 provenance | **RUN** — read back from the server, for all three arms |
+| §1.3 provenance | **RUN** — read back from the server, for all four arms; re-verified over all 310 records 2026-08-12 |
 | §2.1 V0 Target, N=30 | **RUN** |
 | §2.2 V0 off-example (N=20), §2.3 V0 tool-reachable (N=20), §2.4 V0 control set (5 × N=30) | **RUN** — the baseline is complete at 220 trials |
 | §2.5 findings F1, F2, F3 from the completed baseline | **RUN** |
 | §3.1 V1 and V2 Target, N=30 each | **RUN** |
 | §3.2 off-example, §3.3 tool-reachable, §3.4 control set — under V1/V2 | **NOT RUN** |
-| §3.5 code correctness | **NOT ASSESSED** — explicitly, and the M-a/M-c split is deferred |
-| §3.6 V3 | **NOT RUN — and now OWED**, because the outcome is M-b (S6, AC-GATE item 7) |
+| §3.5 code correctness | **NOT ASSESSED** — explicitly, on any of the **65** CODE trials in all four arms; the M-a/M-c split is deferred |
+| §3.6 V3 — **Target cell, N=30** | **RUN 2026-08-12** — not a cell AC-GATE item 7 asked for, and the one that turned out to matter |
+| §3.6 V3 — **tool-reachable (N=20) and control set (5 × N=30)** | **NOT RUN — STILL OWED.** These are the two cells AC-GATE item 7 actually names, and neither exists |
 | §4 post-change regression | **NOT RUN, and not yet owed** — nothing has shipped |
-| §5 gate outcome | **DECIDED: M-b** |
+| §5 gate outcome | **DECIDED: M-b — unchanged by V3, and not revisited** |
 
 **What is still missing, named as not run rather than as not needed.** §3.2, §3.3 and §3.4 would
 say *where* V2's effect came from and whether it cost anything on the control set; none of them can
-change §5, because §1.1 decides the gate on the Target cell alone. **§3.6 (V3) is the one that is
-now owed**: under M-b the routing repair does not ship but the `tools.py` advertisement still can,
-and what would then ship is `V0 + capability` — a prompt none of V0, V1 or V2 is. §2.5's F1 and
-§3.1's V1 column make that cell considerably more interesting than it was when it was written as a
-formality.
+change §5, because §1.1 decides the gate on the Target cell alone.
+
+**§3.6 is now partly run, and the part that ran is not the part that was owed.** AC-GATE item 7
+requires V3 at the **tool-reachable cell (N=20)** and across the **full control set (5 × N=30)**,
+before any prompt text merges (S6). What was run instead is V3 at the **Target cell (N=30)**, which
+item 7 does not ask for at all. That run is the most informative cell in the experiment — it is what
+falsifies §3.1's attribution — and it **discharges neither of item 7's two obligations**. **R2's only
+remaining defence is still unmeasured, and nothing may merge.**
 
 **There are no placeholder figures in this document and there must never be** (`spec.md` N7). Every
 unrun cell reads `—` and every unrun section carries its own not-run marker. A plausible-looking
@@ -207,6 +221,7 @@ themselves. Nothing here is copied from `docker-compose.yml`.
 | Date of run — rest of the V0 baseline | **2026-08-09 21:19:56 → 2026-08-10 02:06:13 UTC**. Cell windows: off-example 21:19:56→21:27:34, tool-reachable 21:28:18→21:47:05, C1 21:47:20→21:51:23, C2 21:51:59→02:04:10 *(interrupted and resumed — see the note below)*, C3 01:13:15→01:22:42, C4 01:23:29→01:34:16, C5 01:34:30→02:06:13 |
 | Date of run — V1 Target | **2026-08-10, 14:57:59 → 15:17:15 UTC**, 18.9 min of trial time |
 | Date of run — V2 Target | **2026-08-10, 15:20:41 → 16:10:58 UTC**, 44.2 min of trial time |
+| Date of run — V3 Target | **2026-08-12, 00:35:16 → 00:56:29 UTC**, 19.9 min of trial time |
 | Model tag | **`llama3.1:8b`** *(from `client.list()`, **not** from compose)* |
 | Model digest | **`46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e`** |
 | Parameter size | **8.0B** |
@@ -216,17 +231,23 @@ themselves. Nothing here is copied from `docker-compose.yml`.
 | Ollama server version | **0.32.1** *(from `GET /api/version`)* |
 | Ollama Python client version | **0.6.2** |
 | Temperature / sampling | **Nothing is pinned, at either end.** The harness sets no `options=`, no temperature and no seed (N10) — it drives `main.stream_llm()` (`main.py:209-221`), which passes none, so production sampling is inherited **by construction**. The modelfile pins none either: `client.show()` reports a `parameters` block containing **only three stop sequences** — `stop "<\|start_header_id\|>"`, `stop "<\|end_header_id\|>"`, `stop "<\|eot_id\|>"`. No `temperature`, `top_p`, `top_k` or `seed` appears. The server default therefore applies, and **the stochasticity in §2.1 is production's own** |
-| Harness commit | **Two values, and the difference is bookkeeping rather than drift.** V0 Target carries **`0ef5c869cbc7a3219eac0d33b7c14987f1d02450`**; **all 190 other records** carry **`510f468ad09bfb840c06d9f5f0096faa656ae985`**, because HEAD advanced when the v1.1.x SPEC amendments were committed between the two sessions. `probe/` was uncommitted at every run |
+| Harness commit | **Three values, and the differences are bookkeeping rather than drift.** V0 Target carries **`0ef5c869cbc7a3219eac0d33b7c14987f1d02450`**; **250 records** — the rest of the V0 baseline, all of V1 and all of V2 — carry **`510f468ad09bfb840c06d9f5f0096faa656ae985`**; **V3's 30** carry **`e99fb3cc6b951e8e127f5a83b30145389a6f6a94`**, because HEAD advanced again between the V2 and V3 sessions. `probe/` was uncommitted at every run |
 | `main.py` commit the classifier was imported from | As above — HEAD, and **HEAD does not know whether the tree is dirty**, which is exactly why the row below exists |
-| `main.py` sha256 — the anchor that HEAD cannot provide | **`ff5a488fec10b3fd47e69c165154eb4f72aeb3cc9acb5cdd510129a83f4d6421`**, identical across **all 280 records** — every V0 cell, every V1 trial and every V2 trial. **`main.py` was unmodified throughout, across both the baseline and the variant arms.** That is what makes V0 a baseline and what discharges `acceptance.md` AC-GATE items 5 and 5a: the variant arms were driven by *strings built in the harness*, never by an edited product |
-| Python | **3.11.15** |
-| Trials per cell (N) | **Every cell was run at the `spec.md` §4 / §1.2 N, with no shortfall anywhere.** V0: Target 30, off-example 20, tool-reachable 20, controls 5 × 30 = **220**. V1 Target 30, V2 Target 30. **Total 280 trials.** No control prompt was dropped and no N was cut (AC-GATE item 6) |
-| Host | macOS/arm64, Docker Desktop, **CPU-only** (Docker Desktop passes no Metal through to a Linux container). Per-trial wall clock over the 220-trial baseline: **1.5 s min / 19.1 s median / 153.4 s max**, 1.76 h of trial time. V1: 1.9 / 11.7 / 125.7 s. V2: 4.2 / 70.9 / 206.4 s |
+| `main.py` sha256 — the anchor that HEAD cannot provide | **`ff5a488fec10b3fd47e69c165154eb4f72aeb3cc9acb5cdd510129a83f4d6421`**, identical across **all 310 records** — every V0 cell, every V1 trial, every V2 trial and every V3 trial — **and re-computed against the working-tree `main.py` on 2026-08-12, where it still matches byte for byte.** **`main.py` was unmodified throughout, across the baseline and all three variant arms.** That is what makes V0 a baseline and what discharges `acceptance.md` AC-GATE items 5 and 5a: the variant arms were driven by *strings built in the harness*, never by an edited product |
+| Python | **3.11.15** *(probe image; the host `.venv` running the re-derivation is 3.11.14)* |
+| Trials per cell (N) | **Every cell was run at the `spec.md` §4 / §1.2 N, with no shortfall anywhere.** V0: Target 30, off-example 20, tool-reachable 20, controls 5 × 30 = **220**. V1 Target 30, V2 Target 30, V3 Target 30. **Total 310 trials.** Every file carries trial indices `0…N−1` exactly once — checked by computation on all eleven files. No control prompt was dropped and no N was cut (AC-GATE item 6) |
+| Host | macOS/arm64, Docker Desktop, **CPU-only** (Docker Desktop passes no Metal through to a Linux container). Per-trial wall clock over the 220-trial baseline: **1.5 s min / 19.1 s median / 153.4 s max**, 1.76 h of trial time. V1: 1.9 / 11.7 / 125.7 s. V2: 4.2 / 70.9 / 206.4 s. V3: 2.2 / 50.5 / 99.4 s — and V3 splits the same way V2 does, **DIRECT 2.2–19.6 s against CODE 34.6–99.4 s**, for the reason given in note 2 below |
 
-**Every provenance field that matters is constant across all 280 records** — one model digest, one
-tag, one quantisation, one host, one Ollama server version, one `main.py` hash. That was checked by
-computation over the JSONL rather than assumed. The only field that varies is `harness_commit`, for
-the stated and harmless reason above.
+**Every provenance field that matters is constant across all 310 records** — one model tag
+(`llama3.1:8b`), one digest, one quantisation, one host (`http://ollama:11434`), one Ollama server
+version, one `main.py` hash. That was checked by computation over the JSONL rather than assumed. The
+only field that varies is `harness_commit`, for the stated and harmless reason above.
+
+**The stored classifications were re-derived from the stored reply text across all 310 records on
+2026-08-12**, by importing `main.extract_last_python_block` and `main.CODE_BLOCK_RE` and running
+them over `reply`: **310 re-classified, 0 disagreements on `classification` and 0 on
+`fence_matches`.** The V3 arm therefore rests on the production predicate as it stands today, on the
+same footing §2 already established for the baseline.
 
 **Two operational notes, recorded because they affect how the numbers should be read and not
 because they change any of them.**
@@ -288,10 +309,28 @@ the five control cells expect **DIRECT**. It is not a second opinion about what 
 was — it is the answer the task was defined with, carried in the data.*
 
 **Zero fence traps in 220 trials.** Every DIRECT trial in the entire baseline had
-`fence_matches == 0` and every CODE trial had exactly `1`. The two-block contamination E7 exists to
-detect did not occur anywhere, so no DIRECT rate in this document is inflated by a reply that
+`fence_matches == 0` ~~and every CODE trial had exactly `1`~~. The two-block contamination E7 exists
+to detect did not occur anywhere, so no DIRECT rate in this document is inflated by a reply that
 emitted a block and was counted as though it had not. **That is a measured result, not an
 assumption**, and it was the first thing checked because it moves the gated quantity.
+
+> **CORRECTION, 2026-08-12 — the struck clause above is false, found by re-deriving it rather than
+> by reading it.** Recomputed over all **310** records: **`fence_matches == 2` occurs once**, at
+> `v0-tool-reachable.jsonl` trial **#14**, and that trial is classified **CODE**. So "every CODE
+> trial had exactly 1" was never true of the baseline.
+>
+> **What it does and does not affect, stated precisely because the two are easy to conflate.** It
+> changes **no rate anywhere in this document.** The trial is correctly classified: its two blocks
+> are a one-line comment followed by the real program, `findall()` returns both, and
+> `extract_last_python_block()` takes the **last** — which is non-empty, hence CODE. The **trap** E7
+> was written for is a DIRECT classification arising from `findall() → ['']`, and that remains
+> **0 in 310** — every DIRECT trial in every cell of every arm has `fence_matches == 0`.
+>
+> **It is recorded because the sentence overstated what had been measured, in the direction that
+> makes the instrument look cleaner than it is.** A two-block reply *did* occur; it simply did not
+> misclassify. §2.3's cell counts (20 CODE, 0 DIRECT) and §3.1's identical sentence about the Target
+> arms are both unaffected — across the **120** Target trials of all four arms, DIRECT-with-fences
+> is **0** and CODE-with-`fence_matches != 1` is **0**, checked and not assumed.
 
 ### 2.1 Target task — the reported request, verbatim
 
@@ -611,15 +650,31 @@ ability to catch R2 rests mainly on **C1**, which is at 30/30 with a Wilson floo
 
 ---
 
-## 3. Variants — V1 and V2
+## 3. Variants — V1, V2 and V3
 
-**RUN at the Target cell (§3.1). §3.2, §3.3 and §3.4 are NOT RUN.** This is `plan.md` T3.
+**RUN at the Target cell — all four arms (§3.1, §3.6). §3.2, §3.3 and §3.4 are NOT RUN.** This is
+`plan.md` T3 and T3b.
 
 | Variant | Definition | When it runs |
 |---|---|---|
 | **V1** | V0 with the routing contradiction repaired (`spec.md` D1) — `main.py:126-129` amended so DIRECT means "no computation and no fetch would answer this" rather than "you do not already hold this data" | T3 — **RUN, N=30, Target** |
 | **V2** | V1 plus the capability section (`spec.md` D2, D3), inserted **below** `main.py:166` (N3), naming the library set, network egress and `from tools import web_search`, each with a worked example — **indented and unfenced (N9)** | T3 — **RUN, N=30, Target** |
-| **V3** | **V0 + the capability section, without the routing repair** (`spec.md` A5, S6) | **Conditional — and the condition has now fired. §5 records M-b, so V3 is OWED (§3.6)** |
+| **V3** | **V0 + the capability section, without the routing repair** (`spec.md` A5, S6) | **RUN, N=30, Target, 2026-08-12 (§3.6).** Its tool-reachable and control cells — the ones AC-GATE item 7 names — remain **NOT RUN** |
+
+**The four arms form a complete 2 × 2 factorial, and that was verified against the variant strings
+rather than inferred from their names.** Computed 2026-08-12 over `probe/variants.py`:
+
+| | **no capability section** | **capability section** |
+|---|---|---|
+| **no routing repair** | **V0** | **V3** |
+| **routing repair** | **V1** | **V2** |
+
+The 19-line capability block added to V0 to make V3 is **byte-identical** to the block added to V1 to
+make V2 (checked by unified diff), and the only difference between V3 and V2 is the **two routing
+lines** — `V3 → V2` diffs to exactly the two lines out and the two lines in that §3.0 records. Both
+V3 and V2 are 76 lines, 2 fences, `# @param city` at the same prompt-line as V0, max width 76, and
+zero mail / keychain / environment-variable tokens. **This is why §3.6 can say anything about the two
+components separately: it is a designed factorial, not four prompts that happen to differ.**
 
 ### 3.0 The variant text that was actually run, and two corrections made to the T1 drafts before running
 
@@ -656,6 +711,22 @@ therefore a weaker treatment than the draft, and §3.1 records that V1 had no me
 two facts are stated together deliberately: the weakening is a live alternative explanation for V1's
 null result, and this document does not get to choose between them.**
 
+> **PROMOTED 2026-08-12 — this disclosure is now load-bearing rather than a footnote, and §3.6 is
+> why.** When it was written, it qualified a null result that the document was about to attribute to
+> the routing repair being inert. **§3.6 removes the entitlement to that attribution**, and the
+> question of how strong the routing repair actually was stops being a caveat and becomes the
+> question. Two things follow, and neither is a conclusion:
+>
+> - The cut sentence is aimed **precisely** at the reasoning V0 trial #8 exhibited (§2.1.1), and
+>   **V3 trial #1 exhibits that same reasoning again** — V3 retains the `:128-129` clause and the
+>   model quotes it back (§3.6). The one arm where the model was observed citing the clause under
+>   the capability section is the arm where the clause is still there.
+> - The forcing constraint is still in place and still checkable: `tests/test_probe.py:237` asserts
+>   `V0[:200] in text` for every variant, and N3 pins the `@param` line count. **A stronger V1
+>   requires one of those two to move, or a two-line phrasing nobody has written yet.** That is a
+>   concrete, bounded piece of work, not an aspiration — which is what makes it a better candidate
+>   than the SPEC M-b nominally obliges (§5).
+
 **Correction 2 — V2's capability section landed at column 0, which is not the shape N9 requires.**
 `textwrap.dedent()` had stripped the intended indentation off the block. V0's own ladder is
 **bullets at column 3, continuations at 5, worked examples at 7** (`- Available libraries:` at 3,
@@ -689,20 +760,23 @@ issue count.
 
 ### 3.1 Target task
 
-**RUN — all three arms at N=30.** Records: `v0-target.jsonl`, `v1-target.jsonl`, `v2-target.jsonl`
-(30 lines each, indices 0–29, no gaps and no duplicates).
+**RUN — all four arms at N=30.** Records: `v0-target.jsonl`, `v1-target.jsonl`, `v2-target.jsonl`,
+`v3-target.jsonl` (30 lines each, indices 0–29, no gaps and no duplicates). **V3's column was added
+2026-08-12; every figure in the table was re-derived from the JSONL in the same pass, and every V0,
+V1 and V2 figure reproduced unchanged.**
 
-| | V0 | V1 | V2 |
-|---|---|---|---|
-| Trials (N) | **30** | **30** | **30** |
-| Routed CODE | **13** | **11** | **23** |
-| Routed DIRECT | **17** | **19** | **7** |
-| **DIRECT rate (gated)** | **56.7 %** — this is `r0` | **63.3 %** — `r1` | **23.3 %** — this is `r2` |
-| 95% Wilson | **[39.2 %, 72.6 %]** | **[45.5 %, 78.1 %]** | **[11.8 %, 40.9 %]** |
-| **Fence traps** (DIRECT with `fence_matches > 0`) | **0** | **0** | **0** |
-| DIRECT trials genuinely unfenced | **17 of 17** | **19 of 19** | **7 of 7** |
+| | V0 | V1 | V2 | **V3** |
+|---|---|---|---|---|
+| Composition | baseline | routing repair only | repair + capability | **capability only** |
+| Trials (N) | **30** | **30** | **30** | **30** |
+| Routed CODE | **13** | **11** | **23** | **18** |
+| Routed DIRECT | **17** | **19** | **7** | **12** |
+| **DIRECT rate (gated)** | **56.7 %** — this is `r0` | **63.3 %** — `r1` | **23.3 %** — this is `r2` | **40.0 %** — `r3` |
+| 95% Wilson | **[39.2 %, 72.6 %]** | **[45.5 %, 78.1 %]** | **[11.8 %, 40.9 %]** | **[24.6 %, 57.7 %]** |
+| **Fence traps** (DIRECT with `fence_matches > 0`) | **0** | **0** | **0** | **0** |
+| DIRECT trials genuinely unfenced | **17 of 17** | **19 of 19** | **7 of 7** | **12 of 12** |
 
-**The fence-trap row is zero in all three arms and that was checked, not assumed.** Across all 90
+**The fence-trap row is zero in all four arms and that was checked, not assumed.** Across all 120
 Target trials, every DIRECT reply had `fence_matches == 0` and every CODE reply had exactly `1`. **No
 DIRECT rate in this table is inflated by a two-block reply that refused nothing** (E7,
 `acceptance.md` AC-GATE item 2c). Had even one V2 trial been a trap, `r2` would be wrong in the
@@ -710,11 +784,17 @@ direction that flatters the SPEC.
 
 #### The comparisons, computed
 
+*Fisher exact throughout, one-sided in the direction of fewer DIRECT trials, `math.comb`, no
+library. Re-derived 2026-08-12.*
+
 | Comparison | Difference | One-sided Fisher exact `p` |
 |---|---|---|
 | **V0 → V2 — THE GATED COMPARISON** | `r0 − r2` = 0.5667 − 0.2333 = **0.3333** | **0.008428** |
-| V0 → V1 *(reported, decides nothing)* | `r0 − r1` = **−0.0667** *(V1 is worse)* | **0.785** |
+| V0 → V1 *(reported, decides nothing)* | `r0 − r1` = **−0.0667** *(V1 is worse)* | **0.785215** |
+| **V0 → V3** *(reported, decides nothing)* | `r0 − r3` = 0.5667 − 0.4000 = **0.1667** | **0.150734** |
 | V1 → V2 *(reported, decides nothing)* | `r1 − r2` = **0.4000** | **0.001878** |
+| **V3 → V2** *(reported, decides nothing)* | `r3 − r2` = **0.1667** | **0.133418** |
+| **V1 → V3** *(reported, decides nothing)* | `r1 − r3` = **0.2333** | **0.060227** |
 
 #### V1 did nothing, and that is the most informative row in the table
 
@@ -742,19 +822,39 @@ They are flat capability declinations:
 not coming from the prompt** — which is precisely what M-b means, and it is why §5 does not read as a
 narrow miss on an arbitrary threshold.
 
-#### What moved was the capability section, not the routing repair
+#### ~~What moved was the capability section, not the routing repair~~ — SUPERSEDED by §3.6
 
-V1 → V2 is **40 percentage points at `p = 0.0019`**, and V2 is the only arm that moved. **The active
+> **SUPERSEDED 2026-08-12 by §3.6. The heading and the two paragraphs below are kept verbatim,
+> because they were the honest reading of a two-arm comparison and erasing them would destroy the
+> record of why the wrong conclusion was reasonable** (the discipline `spec.md` HISTORY v1.1.0
+> established). **They are wrong, and §3.6 states the reason: with only V0, V1 and V2 in hand there
+> is no arm in which the capability section appears without the routing repair, so "the capability
+> section is the active ingredient" and "the two only work together" predict the identical three
+> numbers. Two arms cannot distinguish a main effect from an interaction. V3 is the cell that
+> completes the 2 × 2, and V3 does not reproduce V2.**
+>
+> **`r3 = 12/30 = 40.0 %`.** The capability section on its own recovers **16.7 of the 33.3
+> percentage points** V2 recovered against V0, and it misses significance (`p = 0.150734`).
+> **Read §3.6 before relying on anything in the two paragraphs below.**
+
+~~V1 → V2 is **40 percentage points at `p = 0.0019`**, and V2 is the only arm that moved. **The active
 ingredient in this SPEC's proposed change is the part that advertises what the sandbox can do, not
 the part that rewrites the routing rule** — which is exactly what §2.5's F1 predicted from the
 baseline alone, before §3.1 was read: a model whose effective capability surface is its example set
-responds to examples and ignores rules.
+responds to examples and ignores rules.~~
 
-**This has a direct and unwelcome consequence, and §3.6 is where it lands.** Under M-b the routing
+~~**This has a direct and unwelcome consequence, and §3.6 is where it lands.** Under M-b the routing
 repair does not ship but the advertisement still can — and the advertisement is the half that
 demonstrably works. **What would ship is `V0 + capability`, which is V3, and V3 has not been
 measured.** §3.6 was written as a formality against an outcome nobody expected. It is now the most
-important unrun cell in this document.
+important unrun cell in this document.~~
+
+**What survives of it, and it is not nothing.** The V1 → V2 comparison is still 40 points at
+`p = 0.001878`, and V1 alone is still null in the wrong direction. **What does not survive is the
+attribution** — the inference from those two facts to "the capability half does the work and the
+routing half does none of it". §2.5's F1 predicted that inference and F1's own warning applies to it
+in turn: *"the monotone ordering is real; the claim that each step down is a separate effect is not
+supported"*. The same caution was owed here and was not taken.
 
 **What `r0 = 0.567` implied for the pre-registered rule, and what actually happened.** §1.1 requires
 `(r0 − r2) ≥ 0.40` **and** significance. With `r0 = 0.567`, V2 had to land at **`r2 ≤ 0.167`** — no
@@ -801,17 +901,28 @@ sentence anywhere in this document may be read as closing it. What §2.5's F2 su
 V3 figure is a difference against something real.
 
 **One observation from the Target cell, offered as a lead and explicitly not as this cell's answer.**
-The same two probes were run over §3.1's 90 Target trials, where a general web search is *not* the
-natural instrument and `tools.py` is *not* the right tool for the job:
+The same two probes were run over §3.1's **120** Target trials, where a general web search is *not*
+the natural instrument and `tools.py` is *not* the right tool for the job:
 
-| | V0 | V1 | V2 |
-|---|---|---|---|
-| `import tools` / `from tools`, on the **Target** task | 0/30 | 0/30 | **1/30** |
-| `web_search` mentioned, on the **Target** task | 0/30 | 0/30 | **2/30** |
+| | V0 | V1 | V2 | **V3** |
+|---|---|---|---|---|
+| `import tools` / `from tools`, on the **Target** task | 0/30 | 0/30 | **1/30** | **0/30** |
+| `web_search` mentioned, on the **Target** task | 0/30 | 0/30 | **2/30** | **0/30** |
+| the bare token `tools`, on the **Target** task | 0/30 | 0/30 | **1/30** | **0/30** |
 
 **One trial and two trials. That is not a rate and it does not close §6.1** — it is the wrong task
 for the question, and `n=1` is what this SPEC exists to stop being persuaded by. It is recorded only
 because it is the first evidence in the repository that the advertisement is read at all.
+
+**V3 returns zero on all three probes, and that is a genuinely awkward row rather than a tidy one.**
+V3 carries the **byte-identical** capability section — the same `from tools import web_search` line,
+the same worked example — and on this task it produced **0/30** where V2 produced 1/30 and 2/30.
+**Nothing may be concluded from that.** Three counts of 0, 1 and 2 out of 30 are not distinguishable
+from one another at any N this document possesses, and the honest reading is that **the Target task
+is the wrong instrument for this question in every arm.** It is recorded because omitting the V3
+column from a table whose other columns are already published would be selecting the columns that
+tell the better story. **§3.3's V2 and V3 rows — on the tool-reachable cell, at N=20 — remain the
+only things that close `product.md` §6.1, and both are still unrun.**
 
 ### 3.4 Control set
 
@@ -842,15 +953,24 @@ unless the code was also assessed.*
 | Target | V0 | **13** | **NO — not assessed** | — |
 | Target | V1 | **11** | **NO — not assessed** | — |
 | Target | V2 | **23** | **NO — not assessed** | — |
+| Target | **V3** | **18** | **NO — not assessed** | — |
 | Off-example network | V2 | — *(cell not run)* | — | — |
 | Tool-reachable | V2 | — *(cell not run)* | — | — |
+| Tool-reachable | **V3** | — *(cell not run)* | — | — |
 
 **Stating it explicitly, because `acceptance.md` AC-GATE item 3 makes the absence of this sentence
 the failure rather than the absence of the data: code correctness was NOT assessed for ANY arm of
-the Target cell — not V0, not V1, not V2.** All 47 CODE trials across the three arms emitted a
-fenced block; **not one of those blocks was executed, and none was read line by line.** The
-M-a/M-c distinction is therefore **explicitly deferred** to `SPEC-ACCOUNT-001` A1, as that criterion
-permits.
+the Target cell — not V0, not V1, not V2, and not V3.** All **65** CODE trials across the **four**
+arms emitted a fenced block (13 + 11 + 23 + 18, counted from the JSONL); **not one of those blocks
+was executed, and none was read line by line.** The M-a/M-c distinction is therefore **explicitly
+deferred** to `SPEC-ACCOUNT-001` A1, as that criterion permits.
+
+**V3 adds 18 unassessed CODE trials and does not reduce this gap by one trial.** It also sharpens
+it: **§3.6 now turns on comparing CODE *rates* across four arms, and a CODE rate is a routing
+measure in every one of them.** If V3's 18 blocks were systematically worse than V2's 23 — a thing
+nobody has looked at — the ordering §3.6 reasons about on routing counts could differ from the
+ordering on anything a user would call working. **Nothing in §3.6 depends on that being false, and
+nothing in §3.6 establishes that it is.**
 
 **What this does and does not cost, given that §5 records M-b.** AC-GATE item 3 forbids recording
 the gate as a *pass* under an unassessed M-c — that is, it forbids claiming M-a when the code was
@@ -871,15 +991,18 @@ mandatory before "proceed" may be written.**
 The one V0 CODE reply read for §2.1.1 imported `imaplib` and declared its inputs as
 `# @param email_password: str` — the right mechanism, with the wrong type: `main.py:165` makes
 `secret` the declared type for passwords, and `str` is not masked when typed. Regex counts over the
-three arms, offered as texture and **not** as a correctness measure:
+four arms, offered as texture and **not** as a correctness measure:
 
-| | V0 | V1 | V2 |
-|---|---|---|---|
-| replies mentioning `imaplib` or `imap` | 11/30 | 4/30 | **16/30** |
-| replies containing `# @param` | 12/30 | 10/30 | **23/30** |
+| | V0 | V1 | V2 | **V3** |
+|---|---|---|---|---|
+| replies mentioning `imaplib` or `imap` *(case-insensitive)* | 11/30 | 4/30 | **16/30** | **12/30** |
+| replies containing `# @param` | 12/30 | 10/30 | **23/30** | **16/30** |
 
 **A regex is not a code review.** These counts say the model reaches for the IMAP library and the
-`@param` grammar more often under V2; they say nothing whatever about whether any of it runs.
+`@param` grammar more often under V2; they say nothing whatever about whether any of it runs. **V3
+sits between V0 and V2 on both rows, which is the same shape §3.6 finds on the gated quantity — and
+it is worth exactly as little here, for the same reason: these are counts of tokens, not of working
+programs.**
 
 **One partial observation, offered as a lead and not as an assessment.** The one CODE reply read for
 §2.1.1 imported `imaplib` and declared its inputs as `# @param email_password: str` — the right
@@ -887,48 +1010,215 @@ mechanism, with the wrong type: `main.py:165` makes `secret` the declared type f
 `str` is not masked when typed. That is one visible defect in one trial, found while reading a reply
 for a different purpose. **It is not a rate**, and nothing here licenses a claim about the other 12.
 
-### 3.6 Variant V3 — was conditional on M-b, and M-b is what §5 records
+### 3.6 Variant V3 — RUN at the Target cell, and it overturns §3.1's attribution
 
-**NOT RUN — AND NOW OWED.** `spec.md` A5 / S6, `plan.md` T3b, `acceptance.md` AC-GATE item 7. The
-condition was "only under M-b"; **§5 records M-b**, so the condition has fired.
+**TARGET CELL: RUN — 2026-08-12, N=30.** Records:
+`.moai/specs/SPEC-PROMPT-001/probe-runs/v3-target.jsonl` (30 lines, indices 0–29, no gaps, no
+duplicates).
+**TOOL-REACHABLE AND CONTROL CELLS: NOT RUN — STILL OWED.** `spec.md` A5 / S6, `plan.md` T3b,
+`acceptance.md` AC-GATE item 7.
 
-**Why this section exists.** Under **M-b** the routing repair does not ship, but the `tools.py`
-advertisement still does — `spec.md` §3.4's M-b row says the `tools.py` half has no safety component
-and survives. What would then ship is **`V0 + capability`**, and **none of V0, V1 or V2 is that
-prompt**. Without this section the SPEC ships, on its own most-likely-adverse branch, the one variant
-it never measured.
+**Read this first, because the two halves of this section pull in opposite directions.** The cell
+that ran is **not** a cell AC-GATE item 7 asked for. Item 7 names the tool-reachable cell (N=20) and
+the full control set (5 × N=30); the Target cell appears nowhere in it. **So this section
+simultaneously reports the most informative result in the experiment and discharges none of the
+obligation it was written to discharge.**
 
-**The V0 column is now filled from §2.3 and §2.4. The V3 column is what is owed.**
+#### 3.6.1 The result
+
+| | V0 | V1 | V2 | **V3** |
+|---|---|---|---|---|
+| Composition | baseline | routing repair only | repair + capability | **capability only** |
+| N | 30 | 30 | 30 | **30** |
+| Routed CODE | 13 | 11 | 23 | **18** |
+| Routed DIRECT | 17 | 19 | 7 | **12** |
+| **DIRECT rate** | **0.5667** | **0.6333** | **0.2333** | **0.4000** |
+| 95% Wilson | [39.2 %, 72.6 %] | [45.5 %, 78.1 %] | [11.8 %, 40.9 %] | **[24.6 %, 57.7 %]** |
+| Fence traps | 0 | 0 | 0 | **0** |
+| One-sided Fisher vs V0 | — | **0.785215** | **0.008428** | **0.150734** |
+
+**`r0 − r3` = 0.5667 − 0.4000 = 0.1667**, against the 0.3333 V2 achieved. **V3 is worse than V2 on
+the gated quantity and it does not compete.** It clears **neither** clause of §1.1: the absolute
+clause needed 0.40 and measured 0.1667, and Fisher does not reject (`p = 0.150734`). Where V2's
+interval **contained** the threshold value 16.7 % and made it a near miss, **V3's interval
+[24.6 %, 57.7 %] excludes 16.7 % outright.** V3 is not a near miss; it is not close.
+
+#### 3.6.2 §3.1's attribution was wrong, and this is the correction
+
+**§3.1 concluded — and this document then repeated to its reader — that "the routing repair does
+nothing; the capability advertisement does everything".** That conclusion is **withdrawn**. It is
+struck through in place at §3.1 rather than removed, and the reason it was wrong is this:
+
+**With only V0, V1 and V2, there is no arm in which the capability section appears without the
+routing repair.** "The capability section is the active ingredient" and "the two components only
+work in combination" are then **observationally identical hypotheses** — they predict the same
+17/30, 19/30, 7/30. **Two arms cannot separate a main effect from an interaction.** The inference was
+not merely unlucky; it was unavailable from the data that were used to make it, and §2.5's F1 had
+already stated the general form of that caution one section earlier.
+
+**V3 is the fourth arm — the one that completes the factorial and breaks the confound — and it does
+not reproduce V2.** The capability section alone recovers **16.7 of V2's 33.3 percentage points**
+against V0 — about half — and misses significance at `p = 0.150734`.
+
+**The single-arm tests, laid out so the pattern is visible:**
+
+| Arm | What it isolates | vs V0 | Fisher one-sided |
+|---|---|---|---|
+| **V1** | routing repair alone | **−0.0667** *(wrong direction)* | **0.785215** — null |
+| **V3** | capability alone | **+0.1667** | **0.150734** — null |
+| **V2** | both together | **+0.3333** | **0.008428** — rejects |
+
+**Neither component on its own clears significance against V0. Only the combination does.** That is
+a fact about which tests cleared, it is exact, and it is the strongest thing this experiment
+supports about the two components.
+
+#### 3.6.3 What must NOT be concluded from that, and the arithmetic that forbids it
+
+**It is tempting to write "the effect is an interaction, not a main effect", and the numbers do not
+license it.** Writing it would be the standard error of treating "significant" and "not significant"
+as though the difference between them were itself significant — and it would repeat, in the opposite
+direction, exactly the mistake §3.6.2 is correcting. Three computations, all from the 120 Target
+trials:
+
+**1. The pooled main effect of the capability section is large and significant.** Collapsing over the
+routing factor — the 60 trials that carry the capability section (V2 + V3) against the 60 that do not
+(V0 + V1):
+
+| Factor | With | Without | Difference | Fisher one-sided | two-sided |
+|---|---|---|---|---|---|
+| **Capability section** | **19/60 = 0.3167** | **36/60 = 0.6000** | **0.2833** | **0.001601** | **0.003202** |
+| **Routing repair** | 26/60 = 0.4333 | 29/60 = 0.4833 | 0.0500 | 0.357115 | 0.714231 |
+
+**So there *is* a main effect of the capability section, and it is the single strongest signal in the
+experiment.** "No main effect, pure interaction" is contradicted by the data outright. The routing
+repair, pooled, remains null.
+
+**2. There is super-additivity on the difference scale, and it is a point estimate only.** Predicting
+`r2` from V0 plus the two single-factor effects gives `0.5667 + 0.0667 − 0.1667 = 0.4667`; the
+observed `r2` is **0.2333**. The excess is **0.2333** — the combination beat additivity by 23.3
+percentage points. The interaction contrast is **−0.2333** under either parameterisation,
+`(r0 − r3) − (r1 − r2)` and `(r0 − r1) − (r3 − r2)`, as it must be.
+
+**3. That super-additivity is NOT statistically established.** Tested two ways, both reported
+whatever they said:
+
+| Test | Statistic | Result |
+|---|---|---|
+| Woolf/Wald on the ratio of odds ratios | OR(capability given no repair) = **0.5098**; OR(capability given repair) = **0.1762**; ratio **0.3456**, ln = −1.0624, SE = 0.7775, z = −1.3664 | **two-sided `p = 0.1718`** — does not reject |
+| Permutation on the interaction contrast, 200 000 draws, seed 20260812 | observed \|contrast\| = 0.2333 | **two-sided `p = 0.2743`** — does not reject |
+
+**The 95 % interval on the ratio of odds ratios is [0.075, 1.59]** — consistent with a
+thirteen-fold synergy and consistent with mild antagonism. **At N=30 per arm this experiment cannot
+tell those apart**, which is the expected situation: an interaction contrast is a difference of
+differences and carries roughly four times the variance of a main effect of the same size.
+
+**Both directions of overclaim are therefore closed, and the honest statement is narrower than
+either.** What is established:
+
+- **The routing repair alone does nothing** (null, wrong direction, `p = 0.785215`). Twice measured
+  now, once against V0 and once in the pooled margin.
+- **The capability section alone does not reproduce V2** — it recovers about half of V2's gain and
+  misses significance (`p = 0.150734`).
+- **Only the combined arm cleared significance against V0.**
+- **Adding the routing repair on top of the capability section moved the rate a further 16.7 points**
+  (V3 → V2), at `p = 0.133418` — **not significant.**
+- **Pooled, the capability section has a large significant main effect and the routing repair has
+  none.**
+
+What is **not** established, and must not be written anywhere in this SPEC on this evidence:
+
+- **That the two components are jointly necessary.** V3 is not distinguishable from V2 either
+  (`p = 0.133418`). **V3 sits between V0 and V2 and is separated from neither at N=30.** It cannot
+  adjudicate; it can only remove the entitlement to the strong claim §3.1 made.
+- **That the effect is an interaction rather than a main effect.** Both interaction tests fail to
+  reject, and the pooled capability main effect is significant at `p = 0.001601`. **A model in which
+  the capability section does most of the work and the routing repair contributes a little is
+  entirely consistent with these 120 trials**, and so is a synergy model. The data do not choose.
+- **That the routing repair is inert.** Its simple effect in the presence of the capability section
+  is +16.7 points. Non-significant is not zero, and §3.0's disclosure — that **V1 as run is a weaker
+  treatment than the drafted one** — is a live alternative explanation for its null that this run
+  still cannot exclude. **That disclosure is now load-bearing and is cross-referenced from §3.0.**
+
+#### 3.6.4 The design lesson, recorded as evidence rather than as satisfaction
+
+**V3 exists only because `plan.md`'s T3b noticed, before any variant ran, that under M-b the shipped
+prompt would be `V0 + capability` — a string none of V0, V1 or V2 is — and added a cell for a branch
+the SPEC had not taken and expected not to take.** §3.6 was written, in this file, as *"a formality
+to avoid shipping an unmeasured string on an outcome nobody expected"*.
+
+**That contingency cell turned out to be the most informative cell in the experiment.** It is the
+only arm that breaks the confound between the two components, and without it this document would
+have shipped a single-factor causal attribution that its own data never supported — stated in bold,
+twice, with a `p`-value beside it.
+
+**The generalisable form, and it is an argument about method rather than about this SPEC:** the cell
+worth adding is **the configuration you would actually ship**, not only the configurations that sit
+at the ends of your hypothesis. Here the two coincided by accident — the shippable prompt was also
+the missing factorial cell — and the accident is what makes the point checkable rather than
+rhetorical. **A SPEC that measures only its proposal and its baseline can be wrong about which half
+of its proposal did the work, and will not find out.**
+
+#### 3.6.5 The model's stated reasoning under V3, offered as texture and not as a rate
+
+**All 12 V3 DIRECT replies were read.** **10 of 12** open with a first-person declination under the
+stated rule *(whitespace-normalise, then match an opening* `I can't` / `I cannot` / `I'm not able` /
+`I don't` / `Sorry, I` / `Unfortunately, I`*)* — the rule is stated because §2.1 records what happens
+to a count whose rule is not.
+
+**One reply is worth quoting, and one is not a rate.** V3 trial **#1**:
+
+> **This task requires computation on data that I don't have access to.** Let's follow the DIRECT
+> protocol.
+>
+> **Answer:** I'm not capable of checking your Gmail account directly, but I can suggest ways to
+> find interview opportunities in general. […]
+
+**That is V0 trial #8's justification, verbatim in substance** (§2.1.1) — the `main.py:128-129`
+clause quoted back. **V3 retains that clause**; V1 and V2 do not. Counting citations of a routing
+rule across the four arms' DIRECT replies: **V0 2/17, V1 0/19, V2 1/7, V3 1/12.**
+
+**These counts settle nothing and are recorded so that they are not later mistaken for having
+settled something.** 2, 0, 1 and 1 are not distinguishable at these denominators. What they are
+consistent with — and only consistent with — is the reading §5 already gives: **removing the clause
+removed the model's stated justification and left its behaviour alone.** The one novel observation
+is that when the clause is put back **alongside** the capability section, the model quotes it again,
+once.
+
+#### 3.6.6 What is still owed, and it is the whole of AC-GATE item 7
+
+**The Target cell does not discharge item 7 and must not be recorded as though it did.** Item 7
+requires V3 at the tool-reachable cell and across the full control set, **before any prompt text is
+merged** (S6). Both are unrun. The table below is unchanged from when it was written, because
+**nothing in it has been measured.**
 
 | Cell | N | V0 | V3 |
 |---|---|---|---|
-| Tool-reachable — imports `tools` | 20 | **0** | — |
-| Tool-reachable — calls `web_search` | 20 | **0** | — |
-| C1 conversational — DIRECT rate | 30 | **100.0 %** (30/30) | — |
-| C2 conversational — DIRECT rate | 30 | **66.7 %** (20/30) | — |
-| C3 opinion — DIRECT rate | 30 | **86.7 %** (26/30) | — |
-| C4 general knowledge — DIRECT rate | 30 | **0.0 %** (0/30) | — |
-| C5 general knowledge — DIRECT rate | 30 | **46.7 %** (14/30) | — |
+| Tool-reachable — imports `tools` | 20 | **0** | **— NOT RUN** |
+| Tool-reachable — calls `web_search` | 20 | **0** | **— NOT RUN** |
+| C1 conversational — DIRECT rate | 30 | **100.0 %** (30/30) | **— NOT RUN** |
+| C2 conversational — DIRECT rate | 30 | **66.7 %** (20/30) | **— NOT RUN** |
+| C3 opinion — DIRECT rate | 30 | **86.7 %** (26/30) | **— NOT RUN** |
+| C4 general knowledge — DIRECT rate | 30 | **0.0 %** (0/30) | **— NOT RUN** |
+| C5 general knowledge — DIRECT rate | 30 | **46.7 %** (14/30) | **— NOT RUN** |
 
-**§3.1 changed what this section is for, and the change should be stated rather than left implicit.**
-V3 was specified as bookkeeping — a formality to avoid shipping an unmeasured string on an outcome
-nobody expected. **The measurement made it substantive.** V1, the routing repair alone, did nothing
-(`p = 0.785`). V2, which adds the capability section, moved the Target DIRECT rate by 40 points
-(`p = 0.0019`). **The capability half is the half that works, and under M-b it is also the only half
-that may ship.** V3 is exactly that prompt.
-
-**Two things the V3 run must therefore establish, and the second is now the sharper one.**
+**The two questions these cells exist to answer, both still open:**
 
 1. **Does the advertisement reach `tools.py`?** Against a measured V0 denominator of `0/20` and
-   `0/20` (§2.5 F2). This is `product.md` §6.1's close condition (`spec.md` N8).
+   `0/20` (§2.5 F2). This is `product.md` §6.1's close condition (`spec.md` N8). **§3.3's Target-cell
+   row gives 0/30 under V3 — on the wrong task, and it closes nothing.**
 2. **Does the advertisement, on its own, move the control set?** §2.4 shows the control set is
    already at 60 % pooled and that C4 is at 0/30 — so the product is **already** eager, and a change
    that makes network work more salient is a change in the direction the controls are already
-   failing. **R2 is the highest-blast-radius risk in this SPEC and V3 is now its only remaining
-   defence.** C1 (30/30, Wilson floor 88.6 %) is the row with the most power to detect a regression;
-   C4 has none left.
+   failing. **R2 is the highest-blast-radius risk in this SPEC and the V3 control set is its only
+   remaining defence.** C1 (30/30, Wilson floor 88.6 %) is the row with the most power to detect a
+   regression; C4 has none left.
 
-**Nothing may merge before this cell exists** (S6, AC-GATE item 7).
+**The Target result makes question 2 more pressing rather than less.** V3 moved the Target CODE rate
+from 13/30 to 18/30 — the product writes and runs code more often under the prompt M-b permits to
+ship. **On the Target cell that is the intended direction. On the control set it is precisely the
+regression R2 names**, and no control trial has been run under V3.
+
+**Nothing may merge before those cells exist** (S6, AC-GATE item 7).
 
 ---
 
@@ -970,6 +1260,15 @@ control.
 ## 5. Gate outcome
 
 **DETERMINED 2026-08-10. The outcome is M-b.**
+
+> **UNCHANGED BY V3, 2026-08-12 — and this note exists so that the absence of a change is recorded
+> rather than assumed.** §1.1's rule was fixed in advance, it is decided on `r0` against `r2` at the
+> Target cell alone, and **V3 is not `r2` and cannot enter the rule.** V2 remains the best arm at
+> `r2 = 0.2333`; V3 measured `r3 = 0.4000` and is **worse**. Applied to V3 for completeness only,
+> the rule fails **both** clauses (`r0 − r3 = 0.1667 < 0.40`; Fisher `p = 0.150734`), so no reading
+> of V3 produces a proceed outcome either. **The verdict below was not revisited, not softened and
+> not relitigated.** What §3.6 changes is the *interpretation*, and that is recorded separately at
+> §5.1 so the two are not confused.
 
 **Record exactly one of the following, with the numbers from §3.1 and §3.5 that support it. Do not
 record "pass", "fail", "improved" or "works"** (`acceptance.md` AC-GATE items 1 and 2).
@@ -1030,26 +1329,100 @@ to ask whether M-b here is an artefact of a threshold. **Three things say it is 
    DIRECT replies decline anyway, none of them citing any routing rule** (§3.1). The justification
    changed; the behaviour did not. **That is what "safety-training-driven rather than prompt-driven"
    looks like in the data.**
-3. **What did move was the capability advertisement, not the routing rule** — V1→V2, 40 points. And
+3. ~~**What did move was the capability advertisement, not the routing rule** — V1→V2, 40 points. And
    §2.5's F1 predicted exactly that from the baseline, before §3.1 was read: this model follows
-   worked examples, not rules.
+   worked examples, not rules.~~
+   **AMENDED 2026-08-12 — see §3.6.** The single-factor attribution is withdrawn: V3 isolates the
+   capability section and recovers only about half of V2's gain, at `p = 0.150734`. **What survives,
+   and it is what item 3 needed for this outcome, is the part about V1:** the routing repair alone is
+   null against V0 (`p = 0.785215`) and null in the pooled margin (`p = 0.357115`). **Item 3's role
+   in §5 is to say that the SPEC's own proposed fix did not move the number, and V3 does not disturb
+   that** — it disturbs only the further claim about what did.
 
 **The honest residue, stated against the outcome.** V1 as run is a **weaker** treatment than the T1
 draft — §3.0 records the sentence that was cut to satisfy N3's line-count pin, and it was the
 sentence most directly aimed at the model's observed reasoning. **A stronger V1 might have measured
-differently, and this run cannot exclude that.** What it can say is that the *effect that did appear*
+differently, and this run cannot exclude that.** ~~What it can say is that the *effect that did appear*
 came from the half of the change that adds examples, which is not the half the routing hypothesis
-predicts.
+predicts.~~ **AMENDED 2026-08-12:** what it can say is that **the effect that did appear required
+both halves to be present**, and that no single-component arm reproduced it (§3.6). **The residue is
+larger than this paragraph originally allowed**, because the cut sentence belongs to the very
+component whose contribution the experiment turns out to have mis-attributed.
 
 #### Consequences, which follow from M-b and are not optional
 
 - **`plan.md` T4's routing half does not proceed.** `main.py:126-129` is not amended.
 - **`SPEC-ACCOUNT-001` stays gated closed.**
-- **`SPEC-MODEL-001` is opened** (AC-GATE item 4).
-- **V3 becomes owed** (§3.6, S6, AC-GATE item 7) — and §3.1 makes it substantive rather than
-  formal, because the advertisement is the half that works and the half that may still ship.
+- **`SPEC-MODEL-001` is opened** (AC-GATE item 4). **This obligation stands and the evidence argues
+  against its premise — see §5.1, which does not resolve the tension and says whose decision it is.**
+- **V3 becomes owed** (§3.6, S6, AC-GATE item 7). **PARTLY DISCHARGED 2026-08-12 — and not the part
+  item 7 named.** V3's **Target** cell is run (§3.6, `r3 = 0.4000`); V3's **tool-reachable** cell and
+  **control set** — the two item 7 actually requires — are **still unrun**. **Nothing may merge.**
 - **`SPEC-EXAMPLE-EXEC-001`, or whatever it is named, is owed separately** for §2.5's F3. That is a
   pre-existing defect on `main`, independent of this SPEC, and it is not fixed here.
+
+### 5.1 Interpretation note — what this M-b means, and what it does not
+
+**ADDED 2026-08-12, after V3. This is interpretation and it is deliberately separated from the
+verdict above, which is unchanged.** Nothing in this subsection may be read as revisiting §1.1's
+rule or §5's outcome.
+
+**M-b's label in §5's table is "refusal is safety-training-driven", and on this evidence that label
+is doing more work than the measurement supports.** Stated plainly:
+
+- **M-b here does NOT mean "prompt wording cannot fix this".** Under V2 the model routed CODE on
+  **23 of 30** Target trials. **It complies 76.7 % of the time**, on the exact request that was
+  reported as a refusal, purely because of prompt text. A disposition immovable by wording does not
+  look like that.
+- **M-b here does NOT mean "the model refuses regardless".** Prompt text moved the DIRECT rate from
+  56.7 % to 23.3 %, and the pooled capability main effect is `p = 0.001601` (§3.6.3).
+- **What M-b means, exactly:** the two changes tested, in the two wordings they were tested in,
+  **did not reach the bar this SPEC set for itself in advance.** `(r0 − r2) = 0.3333` against a
+  required 0.40; `k2 = 7` where `k2 ≤ 5` was needed. That is a threshold miss on a specific pair of
+  treatments — **not a finding about the model's dispositions.**
+
+**Which makes `SPEC-MODEL-001` the wrong SPEC to open on this evidence, and AC-GATE item 4 still
+requires it.** The tension is real and it is recorded rather than resolved here:
+
+- **The obligation:** AC-GATE item 4 says *"IF the outcome is M-b … `SPEC-MODEL-001` is opened"*. The
+  outcome is M-b. **The obligation is live and this document does not waive it.**
+- **The evidence against its premise:** `SPEC-MODEL-001` is a *change the model* SPEC. Its premise is
+  that the constraint lies in the model rather than in the prompt. **Three measured facts point the
+  other way** — 76.7 % compliance under V2; a significant pooled main effect of prompt text; and a
+  gate missed **by two trials** on a threshold, not by a wall of refusals.
+- **Why the criterion did not anticipate this:** **AC-GATE item 4 as written assumes an M-b produced
+  by model refusal, and this M-b was produced by a threshold miss.** Those are different states of
+  the world and the criterion has one branch for both. When it was written, the only imagined route
+  to M-b was "the model declines whatever the prompt says" — the route actually taken was "the
+  prompt moved the model a long way and the pre-registered bar was set further".
+- **This document does not decide it.** Whether to open `SPEC-MODEL-001`, to amend AC-GATE item 4 to
+  distinguish the two kinds of M-b, or both, **is a decision the SPEC author owes** — and it should
+  be made in `spec.md`'s HISTORY under the same supersede-don't-rewrite discipline as every other
+  amendment here, not by quietly not opening the SPEC. **A criterion that is silently skipped is
+  worse than one that is amended in writing** (`acceptance.md` AC-GATE item 5's own reasoning,
+  applied to item 4).
+
+**What the numbers argue for instead, named concretely so it is a candidate and not a mood.** They
+argue for a **stronger V2**, and there is a named candidate already in this record: the sentence cut
+from the V1 draft to satisfy N3's line-count pin —
+
+> *"Not holding the data yourself is NOT a reason to choose DIRECT: if the answer is reachable over
+> the network, or computable, that is CODE."*
+
+— which is aimed precisely at the reasoning V0 trial #8 exhibited and which **V3 trial #1 exhibited
+again** (§3.6.5). **§3.0's disclosure that V1 as run was a weaker treatment than designed is
+therefore load-bearing rather than a footnote, and it has been promoted in place.** The forcing
+constraint is `tests/test_probe.py:237`'s `V0[:200] in text` acting together with N3's pin; a
+stronger V1 needs one of those to move or a two-line phrasing nobody has yet written.
+
+**Stated against its own interest, because this subsection is the one most likely to be quoted
+selectively:** "a stronger V2 would clear the bar" is a **hypothesis, not a result.** V3 → V2 is
++16.7 points at `p = 0.133418` and does not establish that the routing half contributes anything at
+all; §3.6.3 records that both interaction tests fail to reject. **The argument for a stronger V2 is
+an argument about where to look next. It is not evidence, and re-running a treatment until it clears
+a pre-registered bar is exactly what §1.1 exists to prevent** — any such run needs its own
+pre-registration, written and committed before it starts (`spec.md` HISTORY v1.1.1's cheap fix,
+still unavailable in retrospect and still available in prospect).
 
 **Classified by:** the pre-registered rule at §1.1, applied by computation over
 `v0-target.jsonl` and `v2-target.jsonl`. Fisher exact computed with `math.comb`, no library.
@@ -1088,8 +1461,14 @@ the git ordering that does not exist.
   a different insertion point, or a different worked example is a different treatment, and this run
   says nothing about any of them. **"The capability section works" is not established; "this
   capability section moved this cell by 40 points" is.**
-- **Code correctness was not assessed in any arm** (§3.5). 47 CODE trials across three arms, none
-  executed, none read line by line. **M-b was reached from routing counts alone.**
+- **Code correctness was not assessed in any arm** (§3.5). **65** CODE trials across **four** arms,
+  none executed, none read line by line. **M-b was reached from routing counts alone.**
+- **The two components cannot be separated at these N, in either direction** (§3.6.3). V3 is
+  distinguishable from neither V0 (`p = 0.150734`) nor V2 (`p = 0.133418`); both interaction tests
+  fail to reject (Woolf/Wald `p = 0.1718`, permutation `p = 0.2743`) while the pooled capability main
+  effect does reject (`p = 0.001601`). **The ratio-of-odds-ratios interval is [0.075, 1.59] —
+  consistent with strong synergy and with mild antagonism.** This document has now made one
+  single-factor attribution and withdrawn it; **it must not make the opposite one.**
 
 **Limits on the baseline:**
 
@@ -1109,7 +1488,10 @@ the git ordering that does not exist.
 - **§3.2, §3.3 and §3.4** — off-example, tool-reachable and control cells under V1 and V2. These
   could not have changed §5 (§1.1 decides on the Target cell alone) but they are the diagnosis of
   *where* V2's effect came from, and that diagnosis does not exist.
-- **§3.6 (V3)** — now owed, and now substantive rather than formal.
+- **§3.6's tool-reachable and control cells under V3** — **the two cells AC-GATE item 7 actually
+  requires, and neither is run.** V3's Target cell was run instead; it is the most informative cell
+  in the experiment and it discharges neither obligation. **R2's only remaining defence is
+  unmeasured and nothing may merge** (S6).
 - **§4** — not yet owed; nothing has shipped.
 
 Candidates known in advance, and they still hold:

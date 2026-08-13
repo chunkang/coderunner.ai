@@ -1,14 +1,120 @@
 ---
 id: SPEC-PROMPT-001
-version: "1.1.1"
+version: "1.1.2"
 status: "draft"
 created: "2026-08-08"
-updated: "2026-08-08"
+updated: "2026-08-12"
 author: "Chun Kang"
 priority: "HIGH"
 ---
 
 ## HISTORY
+
+### v1.1.2 (2026-08-12) — V3 ran, the gate did not move, and a causal conclusion this SPEC published is withdrawn
+
+**The gate is untouched. The outcome is still M-b, on the same rule, with the same numbers, and §5
+was not revisited.** `r2 = 7/30` against `r0 = 17/30`; the absolute clause required 0.40 and measured
+**0.3333**. V3 measured `r3 = 12/30 = 40.0 %` — **worse than V2** — and clears neither clause
+(`r0 − r3 = 0.1667`; Fisher `p = 0.150734`). Nothing about §1.1 or §4's rule changed, and no
+threshold was reinterpreted after the fact.
+
+**What changed is a conclusion, and it is the kind this SPEC exists to get right.**
+`verification-T3.md` §3.1 concluded — in bold, with a `p`-value beside it — that **"the routing
+repair does nothing; the capability advertisement does everything"**. **That conclusion is
+withdrawn.** It is struck through in place at §3.1, marked superseded by the new §3.6, and the reason
+is stated there rather than the text being replaced:
+
+**With only V0, V1 and V2 there is no arm in which the capability section appears without the routing
+repair.** "The capability section is the active ingredient" and "the two only work in combination"
+are then **observationally identical** — they predict the same 17/30, 19/30, 7/30. **Two arms cannot
+separate a main effect from an interaction.** V3 is the third arm, and it does not reproduce V2: the
+capability section alone recovers **16.7 of V2's 33.3 percentage points** and misses significance.
+
+**The four arms are a complete 2 × 2 factorial** — verified against `probe/variants.py`, not inferred
+from names: the 19-line capability block added to V0 to make V3 is **byte-identical** to the block
+added to V1 to make V2, and `V3 → V2` diffs to exactly the two routing lines.
+
+| arm | composition | N | DIRECT | rate | 95% Wilson | traps | Fisher vs V0 |
+|---|---|---|---|---|---|---|---|
+| **V0** | baseline | 30 | 17 | 0.5667 | [0.392, 0.726] | 0 | — |
+| **V1** | routing repair only | 30 | 19 | 0.6333 | [0.455, 0.781] | 0 | **0.785215** — null, wrong direction |
+| **V2** | repair + capability | 30 | 7 | 0.2333 | [0.118, 0.409] | 0 | **0.008428** — rejects |
+| **V3** | capability only | 30 | 12 | 0.4000 | [0.246, 0.577] | 0 | **0.150734** — null |
+
+**Neither component alone clears significance against V0; only the combination does.** That is exact
+and it is the strongest supported statement about the two components.
+
+**What was NOT written, and the arithmetic that forbade it — recorded because the temptation ran the
+other way.** It would have been natural to replace the withdrawn claim with *"the effect is an
+interaction, not a main effect"*. **The data do not license that either**, and writing it would
+repeat the same error in the opposite direction — treating "significant vs not significant" as itself
+a significant difference. Computed over the 120 Target trials:
+
+- **The pooled main effect of the capability section is large and significant**: 19/60 = 0.3167
+  against 36/60 = 0.6000, Fisher one-sided **`p = 0.001601`**. The pooled routing effect is null
+  (`p = 0.357115`). **"No main effect" is contradicted outright.**
+- **Super-additivity is present as a point estimate only**: additive prediction for `r2` is 0.4667
+  against 0.2333 observed, an excess of **0.2333**.
+- **It is not established**: Woolf/Wald on the ratio of odds ratios gives **`p = 0.1718`**; a
+  200 000-draw permutation test on the interaction contrast gives **`p = 0.2743`**. The 95 % interval
+  on the ratio of ORs is **[0.075, 1.59]** — consistent with strong synergy and with mild antagonism.
+
+**So the honest statement is narrower than either single-factor story**, and `verification-T3.md`
+§3.6.3 states it as a list of what is and is not established. **V3 sits between V0 and V2 and is
+separated from neither at N=30.** It removes the entitlement to the strong claim; it does not confer
+a replacement one.
+
+**Three consequences that are not editorial:**
+
+- **AC-GATE item 7 is NOT discharged.** Item 7 requires V3 at the **tool-reachable cell (N=20)** and
+  across the **full control set (5 × N=30)**. What ran is V3 at the **Target cell (N=30)**, which item
+  7 does not name. **Both required cells remain unrun, R2's only remaining defence is unmeasured, and
+  nothing may merge** (S6).
+- **AC-GATE item 4's obligation to open `SPEC-MODEL-001` stands, and the evidence argues against its
+  premise.** Under V2 the model complies on **23 of 30** Target trials — 76.7 % — and prompt text has
+  a significant pooled main effect. **This M-b was produced by a threshold miss, not by model
+  refusal, and item 4 as written did not anticipate that distinction**; it has one branch for both
+  states of the world. `verification-T3.md` §5.1 records the tension, declines to resolve it, and
+  names it as a decision the SPEC author owes — to be taken here in HISTORY rather than by quietly
+  not opening the SPEC.
+- **§3.0's disclosure that V1 as run was a weaker treatment than drafted is promoted from footnote to
+  load-bearing.** The cut sentence — *"Not holding the data yourself is NOT a reason to choose
+  DIRECT…"* — belongs to the very component whose contribution was mis-attributed, and **V3 trial #1
+  quotes the `:128-129` clause back exactly as V0 trial #8 did**, in the one variant arm that retains
+  it. A stronger V1 requires `tests/test_probe.py:237`'s `V0[:200] in text` or N3's pin to move, or a
+  two-line phrasing nobody has written. **That is a candidate for where to look next, not a result**,
+  and any re-run needs its own pre-registration committed before it starts.
+
+**The design lesson, recorded as evidence rather than as satisfaction.** **V3 existed only because
+`plan.md` T3b noticed that under M-b the shipped prompt would be `V0 + capability` — a string none of
+V0, V1 or V2 is — and added a cell for a branch the SPEC expected not to take.** `verification-T3.md`
+called it *"a formality"*. **That contingency cell became the most informative cell in the
+experiment**, and without it this SPEC would have shipped a single-factor causal attribution its own
+data never supported. **The generalisable form: measure the configuration you would actually ship,
+not only the two ends of your hypothesis.**
+
+**Two further corrections found by re-deriving figures rather than reading them** (N7):
+
+- **`verification-T3.md` §2.0's claim that "every CODE trial had exactly `1`" fence match is false.**
+  Recomputed over all 310 records, `fence_matches == 2` occurs once — `v0-tool-reachable.jsonl` #14 —
+  correctly classified CODE, because `extract_last_python_block()` takes the **last** block and it is
+  non-empty. **It changes no rate.** The trap E7 was written for — a DIRECT classification from
+  `findall() → ['']` — remains **0 in 310**. Struck through in place with the measurement beside it,
+  because the sentence overstated what had been checked in the direction that flatters the
+  instrument.
+- **The unassessed-CODE count is 65 across four arms, not 60.** 13 + 11 + 23 + 18, counted from the
+  JSONL. **Code correctness is still NOT assessed on any trial of any arm**, and the M-a/M-c split
+  stays deferred to `SPEC-ACCOUNT-001` A1.
+
+**Provenance, re-verified rather than carried forward.** 310 records; `main.py` sha256
+`ff5a488f…` **identical across all of them and still matching the working-tree file**; one model tag,
+one digest, one quantisation, one host, one Ollama version. All 310 stored classifications were
+**re-derived from the stored reply text** by importing `main.extract_last_python_block` —
+**0 disagreements on `classification`, 0 on `fence_matches`**. `harness_commit` now takes three
+values, the third being V3's, for the same harmless reason as the second.
+
+**Not changed:** no requirement, no threshold, no acceptance criterion, no gate outcome. **§4's rule
+is untouched and §5's verdict was not revisited, softened or relitigated.**
 
 ### v1.1.1 (2026-08-09) — A false claim about this SPEC's own evidence, withdrawn
 
