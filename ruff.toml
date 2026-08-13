@@ -76,3 +76,16 @@ select = [
 #            Scoped to this one file rather than to `tests/*`, so a future suite
 #            that shells out has to make its own case. SPEC-KEYCHAIN-001 T8.
 "tests/test_launcher_source.py" = ["S603", "S607"]
+
+# S603: this file runs `install.sh` into pytest's tmp_path and runs the wrapper
+#       it generates against a stub launcher, to check that the wrapper `exec`s,
+#       bakes in an absolute path, and survives a zero-argument call under
+#       `set -u` on bash 3.2. Every argument is a literal or a tmp_path; nothing
+#       user-supplied reaches any call, and no invocation touches ~/bin, HOME,
+#       PATH or Docker.
+#       S607 is NOT exempted here, and that is the difference from the entry
+#       above: this file spells `/bin/bash` in full on purpose. The property
+#       under test is the behaviour of macOS's 3.2.57, so resolving `bash` from
+#       PATH — and picking up a Homebrew 5.x — would test the one interpreter
+#       the check is not about. Scoped to this one file. SPEC-INSTALL-001.
+"tests/test_install_source.py" = ["S603"]
