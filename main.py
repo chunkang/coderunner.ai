@@ -703,7 +703,47 @@ def show_exec_result(result: ExecResult) -> None:
         )
 
 
+# The wordmark, 5 rows and 61 columns. 61 rather than the 86-column block art in
+# this file's own header for one measured reason: the header art does not fit an
+# 80-column terminal, which is still the default width of Terminal.app, and a
+# logo that wraps is worse than no logo. LOGO_MIN_WIDTH leaves two columns of
+# slack so a logo is never printed into a terminal that would fold it.
+LOGO = """\
+████ ████ ███  ████ ███  █  █ █  █ █  █ ████ ███     ████ ███
+█    █  █ █  █ █    █  █ █  █ ██ █ ██ █ █    █  █    █  █  █
+█    █  █ █  █ ███  ███  █  █ █ ██ █ ██ ███  ███     ████  █
+█    █  █ █  █ █    █ █  █  █ █  █ █  █ █    █ █     █  █  █
+████ ████ ███  ████ █  █ ████ █  █ █  █ ████ █  █ █  █  █ ███"""
+LOGO_MIN_WIDTH = 63
+
+
+def _clear_is_safe() -> bool:
+    """Whether wiping the terminal would destroy something the user needs.
+
+    Two ways it would. Redirected output is the obvious one: clear codes in a
+    pipe or a log corrupt it, so this is gated on an actual terminal.
+
+    The second is not obvious and is the reason this function exists rather than
+    a bare `console.clear()`. Every `warn()` in the launcher fires BEFORE the
+    container starts, and five of the six are SPEC-KEYCHAIN-001 U4 degradation
+    lines — "'api_key' is registered but could not be read — it will be
+    prompted." Their whole purpose is to tell the user that a declared secret
+    will be typed rather than sourced. Clearing the screen at startup erases
+    them in the instant before they are read, and the user then meets a getpass
+    prompt with no idea why. The launcher sets CODERUNNER_LAUNCH_WARNED when it
+    has said anything, and a clean screen loses to a line worth reading.
+    """
+    return console.is_terminal and not os.environ.get("CODERUNNER_LAUNCH_WARNED")
+
+
 def show_banner() -> None:
+    if _clear_is_safe():
+        console.clear()
+
+    if console.width >= LOGO_MIN_WIDTH:
+        console.print(Text(LOGO, style="bold magenta"))
+        console.print()
+
     banner = Text()
     banner.append("CodeRunner", style="bold magenta")
     banner.append(".AI  ", style="bold white")

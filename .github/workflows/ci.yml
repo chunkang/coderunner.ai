@@ -298,8 +298,15 @@ jobs:
         #        path, that it survives a zero-argument call under `set -u` on
         #        bash 3.2, that it destroys no file it did not write, that it
         #        edits no shell startup file, and the vacuity guard
+        #
+        #    +8 SPEC-BANNER-001: two in tests/test_launcher_source.py (warn()
+        #        records that it fired; the flag reaches the container only when
+        #        set) and six in tests/test_main_integration.py (the logo fits
+        #        the width it declares, is printed above that width and
+        #        SUPPRESSED rather than wrapped below it, and the screen is not
+        #        cleared over a launcher warning or into a pipe)
         #   ---
-        #   565
+        #   573
         #
         # MEASURED, NOT COMPUTED. The arithmetic above records where the number
         # came from; the number itself was taken from the `tests` attribute of a
@@ -307,7 +314,7 @@ jobs:
         # derived by adding an expected delta cannot see a test that stopped
         # being COLLECTED, which is the whole thing this gate exists to catch.
         #
-        # 565 was measured on the HOST (2026-08-12, Python 3.11.14), not on a
+        # 573 was measured on the HOST (2026-08-12, Python 3.11.14), not on a
         # runner: this branch has never had a CI run, because this workflow
         # triggers only on push to `main` and PRs to `main`. The floor is
         # therefore the one number here that the pipeline has not yet checked
@@ -322,7 +329,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 565
+          MIN_PASSED = 573
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

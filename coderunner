@@ -24,7 +24,14 @@ yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
 red()   { printf '\033[31m%s\033[0m\n' "$*" 1>&2; }
 say()   { cyan "▶ $*"; }
 ok()    { green "✔ $*"; }
-warn()  { yellow "! $*"; }
+# LAUNCH_WARNED is read by main.py, through -e at section 8, for exactly one
+# purpose: to STOP IT CLEARING THE SCREEN. Every warn() here is printed
+# BEFORE the container starts, and five of the six are SPEC-KEYCHAIN-001 U4
+# degradation lines whose entire job is to tell the user a declared secret
+# will be prompted rather than sourced. A banner that wipes the terminal
+# would erase them in the instant before they were read.
+LAUNCH_WARNED=0
+warn()  { LAUNCH_WARNED=1; yellow "! $*"; }
 die()   { red "✖ $*"; exit 1; }
 
 # All silent-install / silent-start noise is redirected here so the terminal
@@ -597,6 +604,14 @@ fi
 # never a session (SPEC-KEYCHAIN-001 E1).
 RUN_ENV=()
 keychain_collect_env
+
+# Bare name, never NAME=value: SPEC-KEYCHAIN-001 N4, asserted by
+# tests/test_launcher_source.py, and it applies to every -e in this file
+# rather than only to the secret ones.
+if [ "$LAUNCH_WARNED" -eq 1 ]; then
+  export CODERUNNER_LAUNCH_WARNED=1
+  RUN_ENV+=(-e CODERUNNER_LAUNCH_WARNED)
+fi
 
 # THE EXPANSION IS GUARDED AND THE GUARD IS NOT OPTIONAL (N8, AC-LAUNCH).
 # `coderunner:10` sets `set -Eeuo pipefail` and `coderunner:1` is
