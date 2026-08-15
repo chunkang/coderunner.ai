@@ -465,11 +465,117 @@ ensure_docker_installed
 ensure_docker_running
 detect_compose
 
-# --- 5. build image on first run (or when missing) ----------------------------
+# --- 5. build image when it is absent, or when a baked-in file is newer -------
+# The gate here was `if ! docker image inspect` alone, which builds ONLY when the
+# image is ABSENT. Editing source therefore never rebuilt anything, and
+# Dockerfile:37-38 predicted the consequence in as many words. Measured
+# 2026-08-15, on the author's own machine: the image dated 2026-08-07T16:16 and
+# `ls /app` inside it had NO keychain.py at all — SPEC-KEYCHAIN-001, install.sh
+# and the wordmark, five days of merged work, were absent from every session
+# while the tree on disk contained all three.
+#
+# The comparison is file mtime against the time the IMAGE ITSELF was last built.
+# That is deliberately not a stamp file: there is no second piece of state to
+# drift, so deleting the image, rebuilding it by hand, or checking out another
+# branch all leave the next launch reading the truth rather than a note about it.
+#
+# WHAT IT CANNOT SEE IS CONTENT. `git checkout` writes a fresh mtime onto an
+# identical file and buys one rebuild that changes nothing — 0.375s measured, all
+# of it Docker deciding it had nothing to do. ONE, not one per launch: see
+# image_epoch() below for why that distinction cost a field change. The reverse,
+# a file restored with an older mtime, is missed entirely. This gate decides only
+# whether to ASK Docker; Docker's content hash remains the authority on whether
+# any work happens.
+
+# `stat` is the one place the two platforms disagree irreconcilably: -f on BSD,
+# -c on GNU, and no common spelling. Same branch shape as section 0's keychain
+# clients, for the same reason.
+mtime_of() {
+  if [ "$OS" = "Darwin" ]; then stat -f %m "$1"; else stat -c %Y "$1"; fi
+}
+
+# When this tag was last built, in epoch seconds; non-zero if that cannot be
+# established.
+#
+# `.Metadata.LastTagTime` AND NOT `.Created`, and the difference is the whole
+# correctness of this section. Measured 2026-08-15, touching main.py without
+# changing a byte of it and building twice:
+#
+#   .Created                 10:24:28 -> 10:24:28   (unchanged)
+#   .Metadata.LastTagTime    10:28:23 -> 10:31:05   (advances)
+#
+# BuildKit reuses the cached image config when the content hash is unchanged, so
+# `.Created` describes when this CONTENT was first built and stops moving. A gate
+# reading it would therefore never clear: `git checkout` writes a fresh mtime
+# onto an identical file, the rebuild changes nothing, `.Created` stays put, and
+# every launch from then on announces a rebuild. LastTagTime records when the tag
+# was last applied, which a build does whether or not it did any work — which is
+# exactly the question being asked here.
+#
+# `.Unix` is taken in the template rather than parsed out here, and that removes
+# the whole platform branch this function used to carry: BSD `date -f` and GNU
+# `date -d` share no spelling, and Docker will do the conversion for free.
+image_epoch() {
+  local built
+  built="$(docker image inspect "$IMAGE_NAME" --format '{{.Metadata.LastTagTime.Unix}}' 2>/dev/null)" || return 1
+  # Empty, `<no value>`, or the negative epoch a zero-valued timestamp renders
+  # as: all mean "cannot be established", and all fall through to a rebuild.
+  case "$built" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$built"
+}
+
+# Every file baked into the image, read from the Dockerfile's OWN COPY lines
+# rather than listed again here. The duplicate list is the failure mode this
+# whole section exists to prevent, and tests/test_source_seam.py already applies
+# the same derive-don't-restate rule to main.py's import block. The Dockerfile
+# is included on its own account: an edit to it invalidates the image no less
+# than an edit to a module does.
+image_sources() {
+  printf '%s\n' Dockerfile
+  sed -n 's|^COPY \(.*\) \./$|\1|p' Dockerfile | tr ' ' '\n'
+}
+
+# True when anything baked in is newer than the image. UNREADABLE IS STALE: if
+# the date will not parse or a file will not stat, the answer is to rebuild, not
+# to assume freshness. A needless 0.375s is the cheaper error by a wide margin
+# than the one this section was written to end.
+image_is_stale() {
+  local built file mtime
+  built="$(image_epoch)" || return 0
+  [ -n "$built" ] || return 0
+  for file in $(image_sources); do
+    [ -f "$file" ] || continue
+    if ! mtime="$(mtime_of "$file")"; then
+      return 0
+    fi
+    # -ge, NOT -gt. Both sides are whole seconds, and a build takes 0.375s when
+    # it has nothing to do, so an edit landing in the SAME SECOND as the build
+    # that preceded it is genuinely newer and compares equal. Measured
+    # 2026-08-15: `touch settings.py` immediately after a build reported FRESH
+    # under -gt, which is the one answer that loses an edit.
+    #
+    # The cost of -ge is one spare no-op rebuild whenever a file's mtime happens
+    # to share a second with the tag time, and it cannot latch: each rebuild
+    # advances LastTagTime, so the tie breaks on the next launch at the latest.
+    if [ "$mtime" -ge "$built" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
   say "Building ${IMAGE_NAME} (first run)…"
   "${COMPOSE[@]}" build "$SERVICE_NAME"
   ok "Build complete."
+elif image_is_stale; then
+  # say() rather than warn(): warn() sets LAUNCH_WARNED, which exists to stop
+  # main.py clearing the screen so a keychain degradation line survives to be
+  # read (coderunner:27-34). "I rebuilt because you edited something" is not a
+  # line worth costing the user their banner.
+  say "Source is newer than ${IMAGE_NAME} — rebuilding…"
+  "${COMPOSE[@]}" build "$SERVICE_NAME"
+  ok "Rebuild complete."
 fi
 
 # --- 5a. model presence helpers -----------------------------------------------

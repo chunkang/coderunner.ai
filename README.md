@@ -14,6 +14,12 @@ Local, agentic Python code interpreter powered by LLaMA (via [Ollama](https://ol
 
 The launcher will install Docker (if missing), pull the model on first run, and drop you into an interactive terminal. When you exit, the container and the bundled Ollama sidecar are shut down so the machine reclaims its RAM. Model weights persist in a Docker volume so subsequent launches are instant.
 
+**Edited source is picked up automatically.** Your `.py` files are baked into the image, so a change on the host means nothing until the image is rebuilt — and the launcher used to build only when the image was missing, which let edits go unnoticed indefinitely. It now compares the mtime of every file on the Dockerfile's `COPY` lines against the time the image was last built, and rebuilds when any of them is newer. An unchanged tree costs nothing; a rebuild with nothing to do costs 0.375 s, because Docker's layer cache does the real work. To force one by hand:
+
+```bash
+docker compose build coderunner
+```
+
 ### Running it from anywhere
 
 ```bash
