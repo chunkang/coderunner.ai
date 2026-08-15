@@ -50,8 +50,9 @@ Configuration via environment variables:
 | `CODERUNNER_MEMORY_TOP_K` | `1` | Past solutions retrieved per turn, clamped to 1–5 |
 | `CODERUNNER_MEMORY_MIN_SIMILARITY` | `0.65` | Cosine similarity floor for a hit, clamped to 0.0–1.0 |
 | `CODERUNNER_MEMORY_MAX_RECORDS` | `100000` | Record cap; oldest records are pruned first. Clamped to 10–200000 |
+| `CODERUNNER_PARAM_CAPTURE` | unset | Overrides the parameter capture policy for one session: `sensitive_excluded`, `never` or `always`. Deliberately absent from compose — see [Declared parameters](#declared-parameters) |
 
-Everything except `OLLAMA_HOST` and `CODERUNNER_HISTORY` passes through from your shell (`docker-compose.yml:69-101`); compose sets those two unconditionally, so exporting them on the host has no effect under `./coderunner`.
+Everything in that table except `OLLAMA_HOST`, `CODERUNNER_HISTORY` and `CODERUNNER_PARAM_CAPTURE` passes through from your shell (`docker-compose.yml:69-101`). Compose sets the first two unconditionally, so exporting them on the host has no effect under `./coderunner`. `CODERUNNER_PARAM_CAPTURE` is the opposite case: compose never mentions it, so exporting it on the host has no effect either, and it is reachable only through an explicit `docker compose run -e`.
 
 The six memory variables are parsed defensively: a malformed value falls back to the default or clamps into range. `CODERUNNER_TIMEOUT` and `CODERUNNER_MAX_RETRIES` are not — a non-numeric value there raises at import, before anything is rendered.
 
@@ -64,6 +65,12 @@ Run `./coderunner --doctor` for a diagnostic report if anything misbehaves.
 A typical session looks like this:
 
 ```
+████ ████ ███  ████ ███  █  █ █  █ █  █ ████ ███     ████ ███
+█    █  █ █  █ █    █  █ █  █ ██ █ ██ █ █    █  █    █  █  █
+█    █  █ █  █ ███  ███  █  █ █ ██ █ ██ ███  ███     ████  █
+█    █  █ █  █ █    █ █  █  █ █  █ █  █ █    █ █     █  █  █
+████ ████ ███  ████ █  █ ████ █  █ █  █ ████ █  █ █  █  █ ███
+
 ╭────────────────────────────────────────────────────────────────────╮
 │                                                                    │
 │  CodeRunner.AI  — agentic Python interpreter powered by LLaMA      │
@@ -104,6 +111,8 @@ Answer: it's currently 4 °C in Seoul.
 ──────────────────────────────────────────────────────────────────────
 ```
 
+The wordmark is 61 columns wide and is printed only when the terminal is at least 63 columns (`main.py:717`) — a logo that wraps is worse than no logo, and 80 columns is still Terminal.app's default. Startup also clears the screen, but only when it is safe to: never into a pipe or a log, and never when the launcher has already printed a warning line, because those lines are the keychain-degradation notices that explain why you are about to be asked for a value.
+
 If the first script fails, CodeRunner feeds the stderr back to the model, which diagnoses the problem and emits a corrected block — up to `CODERUNNER_MAX_RETRIES` attempts per turn.
 
 For conversational questions that don't need computation ("explain X"), the model skips the code protocol and answers directly.
@@ -114,10 +123,11 @@ For conversational questions that don't need computation ("explain X"), the mode
 
 1. **Launcher (`coderunner`)** — bootstraps Docker + Docker Compose, ensures the `ollama` sidecar is healthy, pulls the model on first run, and starts the app container ephemerally.
 2. **App (`main.py`)** — Rich TUI that streams LLaMA's reasoning, extracts the last fenced Python block, and hands it to the executor.
-3. **Executor** — writes the script to a scratch directory, runs it with `python -I` (isolated mode), captures stdout/stderr, and returns the result.
-4. **Self-correction loop** — on non-zero exit, stderr is sent back to the model as feedback for the next attempt.
-5. **Solution memory** — wraps steps 2–4: one retrieval before the first LLM call, one capture after a turn succeeds. See the next section.
-6. **Cleanup** — on exit, the launcher stops the Ollama container so RAM is reclaimed; the model volume is preserved for the next session.
+3. **Declared parameters** — if the block carries `# @param` lines, CodeRunner asks you for those values once, before execution. See [Declared parameters](#declared-parameters).
+4. **Executor** — writes the script to a scratch directory, splices in the parameter prelude, runs it with `python -I` (isolated mode), captures stdout/stderr, and returns the result.
+5. **Self-correction loop** — on non-zero exit, stderr is sent back to the model as feedback for the next attempt.
+6. **Solution memory** — wraps steps 2–5: one retrieval before the first LLM call, one capture after a turn succeeds. See [Solution memory](#solution-memory).
+7. **Cleanup** — on exit, the launcher stops the Ollama container so RAM is reclaimed; the model volume is preserved for the next session.
 
 Sandboxing note: execution runs inside the container as a non-root user, but the current sandbox is process-level, not network-level. Do not run untrusted prompts against sensitive hosts. Note that generated code runs as the same `runner` user that owns the memory volume, and can therefore read, corrupt or delete the store.
 
@@ -160,9 +170,55 @@ One case worth naming: Milvus Lite does not support concurrent access. A second 
 
 ---
 
+## Declared parameters
+
+Some tasks need a value only you have: a city, a row count, an API key. Rather than have the model guess one or call `input()` inside a script whose stdin it does not own, the model **declares** what it needs with a comment inside the Python block it already emits, and CodeRunner asks you before the script runs.
+
+```python
+# @param city: str = "Which city?"
+# @param api_key: secret = "API key"
+```
+
+The grammar is `# @param NAME : TYPE = "prompt"` on a line of its own, inside the ```` ```python ```` fence. Four types are recognised — `str`, `int`, `float` and `secret` — and both quote styles are accepted.
+
+A turn with declarations opens with one status line (*"This script needs 2 values, one of them marked secret."*), then asks for each in order. Non-secret values are read with `input()`, so readline and arrow-key history work. A `secret` is read with `getpass`: no echo, and — the reason it is not merely cosmetic — **no readline**, so it never enters `CODERUNNER_HISTORY`, which compose pins to the persistent volume. One confirmation line per value follows, showing what was captured; a secret shows the fixed mask `●●●●●●` rather than a length-revealing redaction of the real text.
+
+**Values are never rendered into the script you see.** They are turned into Python literals and spliced into a prelude at execution time, inside the executor — so no variable in the turn's scope ever holds your value alongside the code. That is a fact about the program's shape rather than a filter someone has to maintain. Under `sensitive_excluded` — and only that policy — a secret is additionally replaced with `[redacted]` wherever it appears in stdout or stderr. The substitution is made on the result itself, which closes all three sinks at once: the panel you see, the stderr fed back for self-correction, and the memory write. Under `always` a secret the script chose to print reaches the screen and the store; under `never` it reaches the screen but nothing is stored.
+
+Collection happens **once per turn**. Attempts 2 and 3 reuse what you typed, so a failing script does not mean typing an API key three times.
+
+### Capture policy
+
+Declared parameters and [solution memory](#solution-memory) meet at an obvious question: should a turn that used a secret be stored? CodeRunner asks it once, on your first parameterised turn, and remembers the answer in `/home/runner/.coderunner/settings.json` on the persistent volume.
+
+| Choice | Policy | Effect |
+| --- | --- | --- |
+| 1 | `sensitive_excluded` | Store the turn, but redact every secret value first. Recommended, and the offered default |
+| 2 | `never` | Do not store a parameterised turn at all. One yellow line says so when it applies |
+| 3 | `always` | Store everything, secrets included |
+
+| Command | Effect |
+| --- | --- |
+| `/params` | The effective policy, where it came from, and the settings file path |
+| `/params capture <1\|2\|3>` | Set and persist the policy |
+
+Like `/memory`, these are handled in the REPL and never reach the model.
+
+Resolution order is `CODERUNNER_PARAM_CAPTURE` → `settings.json` → fallback, and **on any overlap the environment wins unconditionally**. An override set to something unrecognised is ignored rather than obeyed, so a typo cannot silently change what is stored.
+
+One asymmetry is deliberate and will read as a bug if it is not stated: the fallback is `never`, while the offered default is `sensitive_excluded`. A file that cannot be parsed is exactly the file that might have said `never`, and falling back to the recommended value would mean capturing turns from a user who had asked that they not be captured. A choice made in answer to a question carries information; a fallback carries none, and assumes the strictest thing the missing information could have said. The same reasoning covers a non-interactive stdin, where the question cannot be asked at all.
+
+`settings.json` is not a general configuration file. A key naming one of the environment variables above is ignored, with one status line.
+
+### When it breaks
+
+A malformed declaration is skipped rather than fatal — the script then fails on the resulting `NameError`, which the self-correction loop already handles, and that is a better outcome than abandoning the turn over a comment the model got slightly wrong. An unparseable `int` or `float` is re-prompted **exactly once**, then injected as `None` so the script fails normally into the same loop; looping until you get it right would trap you in a turn you could only leave with Ctrl+C. A closed stdin counts as a declined value: the empty string, injected as `''`.
+
+---
+
 ## Host-keychain secrets
 
-When the model needs a value only you have, it declares it — `# @param api_key: secret = "API key"` — and CodeRunner asks you for it. If you use the same API key every session, you can keep it in your operating system's credential store instead and stop retyping it.
+When the model needs a value only you have, it [declares it](#declared-parameters) — `# @param api_key: secret = "API key"` — and CodeRunner asks you for it. If you use the same API key every session, you can keep it in your operating system's credential store instead and stop retyping it.
 
 ```bash
 ./coderunner --set-secret api_key      # the OS prompts for the value and masks it
@@ -190,8 +246,8 @@ The three subcommands run before the Docker bootstrap, so storing a password doe
 >
 > If you need a secret that the Docker daemon cannot see, do not use this feature. Type it at the
 > prompt, where CodeRunner already routes it through `getpass` and keeps it out of readline
-> history, out of the rendered script, and — under the `sensitive_excluded` or `never` capture
-> policies — out of solution memory.
+> history, out of the rendered script, and — under the `sensitive_excluded` or `never`
+> [capture policies](#capture-policy) — out of solution memory.
 
 One consequence deserves stating on its own, because it changes what an existing promise means. `never` — the capture policy for people who want a guarantee rather than a reduction — is still the strongest policy available, and for a keychain-sourced value **it no longer bounds the exposure**: the value is in the container's `Config.Env` for the whole session regardless of which policy you chose, because that is outside the store any capture policy governs. "This turn was not stored" remains true. It is no longer complete.
 
