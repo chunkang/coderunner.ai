@@ -121,7 +121,11 @@ The wordmark is 61 columns wide and is printed only when the terminal is at leas
 
 If the first script fails, CodeRunner feeds the stderr back to the model, which diagnoses the problem and emits a corrected block — up to `CODERUNNER_MAX_RETRIES` attempts per turn.
 
-For conversational questions that don't need computation ("explain X"), the model skips the code protocol and answers directly.
+**A DIRECT path exists in the prompt, and on the shipped model it does not fire.** `SYSTEM_PROMPT` offers the model a protocol for questions that need no computation — answer under an `Answer:` heading, emit no fenced block — and this README used to claim the model takes it. It does not. Measured 2026-08-10 over thirty trials of *"explain what a Python closure is, with a short example"* against `llama3.1:8b` via the compose sidecar: **CODE 30/30, DIRECT 0/30**, a 95 % Wilson interval on the DIRECT rate of **[0.000, 0.114]**. Exactly one fenced block came back each time, so this is not the two-block extractor trap; all thirty parsed, and all thirty defined a function and printed a computed value.
+
+What you get instead is a turn indistinguishable from a real computation. The illustration is written to a scratch directory, run under `python -I`, rendered in an `Execution OK` panel, narrated by a **second** LLM round trip, and — the part with a tail — **captured into solution memory as a successful solution**, from which a later "explain X" question can retrieve it and re-inject it under `PRIOR SUCCESSFUL SOLUTION — reference only`. The answer you actually asked for is usually already on screen before any of that runs: all thirty replies carried a prose explanation outside the fence, median 80.5 words.
+
+Nothing raises, nothing exits non-zero, and there is no log line to quote in a bug report. The cost is one extra model round trip per turn and up to three when the illustration fails, plus one subprocess and one persistent write. `SPEC-ILLUSTRATE-001` specifies a structural fix — screening blocks that are closed and import-free — and it is **not shipped**; whether it ships at all is gated on a false-positive measurement that has not yet been taken.
 
 ---
 
