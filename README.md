@@ -123,7 +123,43 @@ If the first script fails, CodeRunner feeds the stderr back to the model, which 
 
 **A DIRECT path exists in the prompt, and on the shipped model it does not fire.** `SYSTEM_PROMPT` offers the model a protocol for questions that need no computation — answer under an `Answer:` heading, emit no fenced block — and this README used to claim the model takes it. It does not. Measured 2026-08-10 over thirty trials of *"explain what a Python closure is, with a short example"* against `llama3.1:8b` via the compose sidecar: **CODE 30/30, DIRECT 0/30**, a 95 % Wilson interval on the DIRECT rate of **[0.000, 0.114]**. Exactly one fenced block came back each time, so this is not the two-block extractor trap; all thirty parsed, and all thirty defined a function and printed a computed value.
 
-What you get instead is a turn indistinguishable from a real computation. The illustration is written to a scratch directory, run under `python -I`, rendered in an `Execution OK` panel, narrated by a **second** LLM round trip, and — the part with a tail — **captured into solution memory as a successful solution**, from which a later "explain X" question can retrieve it and re-inject it under `PRIOR SUCCESSFUL SOLUTION — reference only`. The answer you actually asked for is usually already on screen before any of that runs: all thirty replies carried a prose explanation outside the fence, median 80.5 words.
+Here is one of those thirty turns, replayed through the renderer:
+
+```
+you ➜ explain what a Python closure is, with a short example
+
+🔄 [LLaMA] Analyzing request and designing solution (attempt 1/3)…
+Thought · attempt 1 ──────────────────────────────────────────────────
+Direct Protocol
+
+### Answer:
+
+A Python closure is a function that has access to its own scope and
+the scopes of its outer functions. This means it can "remember"
+variables from those outer functions even after they return.
+
+#### Example:
+  █    1 def outer(x):
+  █    2     def inner():
+  █    3         return x * 2
+  █    4     return inner
+  █    5
+  █    6 f = outer(5)
+  █    7 print(f())  # Outputs: 10
+In this example, the inner function is a closure because it has access
+to the variable x in its outer scope.
+──────────────────────────────────────────────────────────────────────
+⚙️ [System] Running generated Python code…
+╭─────────────────────── Execution OK (rc=0) ────────────────────────╮
+│ 10                                                                 │
+╰────────────────────────────────────────────────────────────────────╯
+📊 [System] Execution successful (Output: 10)
+💬 [LLaMA] Final response streaming…
+```
+
+**The model announces the DIRECT protocol, answers the question completely in prose, and emits a fenced block anyway.** `extract_last_python_block()` (`main.py:447-449`) is a regex, and the only branch that avoids execution (`main.py:1072-1074`) is taken solely when that regex finds nothing — so the illustration is written to a scratch directory, run under `python -I`, and shown in an `Execution OK` panel. A **second** round trip then narrates a result nobody asked for, and the turn is — the part with a tail — **captured into solution memory as a successful solution**, from which a later "explain X" question can retrieve it and re-inject it under `PRIOR SUCCESSFUL SOLUTION — reference only`. The answer you wanted was on screen before any of that ran.
+
+**The transcript stops where the evidence stops.** The reply is trial 9 of `v0-c4-general-knowledge.jsonl`, verbatim, recorded 2026-08-10 against `llama3.1:8b` (Q4_K_M); `10` is what that block really prints. The narration is elided because the probe issues one model call per trial and executes nothing, so no run ever recorded one — and inventing a line here would be precisely the failure this section was rewritten to correct. The `Direct Protocol` header is trial 9's own: 8 of the 30 replies name the protocol explicitly, 19 carry an `Answer:` heading, and all 30 were classified CODE regardless.
 
 Nothing raises, nothing exits non-zero, and there is no log line to quote in a bug report. The cost is one extra model round trip per turn and up to three when the illustration fails, plus one subprocess and one persistent write. `SPEC-ILLUSTRATE-001` specifies a structural fix — screening blocks that are closed and import-free — and it is **not shipped**; whether it ships at all is gated on a false-positive measurement that has not yet been taken.
 
