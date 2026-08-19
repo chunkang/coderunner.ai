@@ -276,12 +276,32 @@ saying so, precisely so it can be reverted on its own without touching solution
 memory. Should it ever be reverted, this limitation returns exactly as written
 above.
 
-### 6.3 Stale-image hazard after editing source
+### 6.3 Stale-image hazard after editing source — **RESOLVED**
 
-`coderunner:163` builds only when `docker image inspect coderunner-ai:latest`
-fails — i.e. only when the image is absent. Editing `main.py` or `tools.py` does
-**not** trigger a rebuild; the launcher silently keeps running the old image
-until the user manually runs `docker compose build coderunner`.
+*Kept rather than deleted, following §6.2: the gap was real, it was invisible by
+construction, and the fix is one gate that can be reverted on its own.*
+
+The original defect: the launcher built only when `docker image inspect
+coderunner-ai:latest` failed — i.e. only when the image was absent. Since the
+`.py` files are baked in by the Dockerfile's `COPY` lines, editing `main.py` or
+`tools.py` did **not** trigger a rebuild; the launcher silently kept running the
+old image until the user ran `docker compose build coderunner` by hand. Nothing
+reported it, so the symptom was an edit that appeared to do nothing at all.
+
+`coderunner:567-579` now branches three ways: build when the image is absent,
+rebuild when `image_is_stale()` (`coderunner:542-565`) is true, and otherwise do
+nothing. Staleness compares each baked-in file's mtime — `image_sources()`
+(`coderunner:533-536`) reads that list from the Dockerfile's own `COPY` lines
+rather than restating it — against the image's `LastTagTime` (`image_epoch()`,
+`coderunner:518-525`). **Unreadable is stale:** a date that will not parse or a
+file that will not stat returns 0 and rebuilds. `README.md:17` documents the
+behaviour and its price — 0.375 s for a rebuild with nothing to do, because the
+layer cache does the real work.
+
+What the gate cannot see is **content** (`coderunner:482-486`). `git checkout`
+writes a fresh mtime onto an identical file and buys one rebuild that changes
+nothing, and a file restored with an *older* mtime is missed entirely. The gate
+decides only "might this differ", never "does this differ".
 
 ### 6.4 `--doctor` has heavy side effects
 
