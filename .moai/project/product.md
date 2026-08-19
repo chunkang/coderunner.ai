@@ -106,7 +106,7 @@ The user's levers, all documented in `README.md`:
 
 **Not** the target audience: anyone needing to run untrusted or adversarial
 prompts against a sensitive host. See Known Limitations (Section 6) and the
-sandboxing note at `README.md:116`.
+sandboxing note at `README.md:178`.
 
 ---
 
@@ -174,7 +174,7 @@ Twenty-one user-visible behaviors, each mapped to the code that implements it.
 
 ### 5.1 Live data lookup (the README reference scenario)
 
-Prompt: **"What's the current weather in Seoul in Celsius?"** (`README.md:61`)
+Prompt: **"What's the current weather in Seoul in Celsius?"** (`README.md:88`)
 
 Flow, as coded:
 
@@ -235,7 +235,7 @@ documents it for the user, with a transcript of one of the thirty. See §6.15.
 
 If the first script raises, the red `Execution FAILED` panel is shown, stderr is
 sent back, and attempt 2 begins from the model's diagnosis
-(`main.py:527-539`, `README.md:101`).
+(`main.py:527-539`, `README.md:122`).
 
 ---
 
@@ -313,7 +313,7 @@ It is not a read-only health check.
 
 ### 6.5 The sandbox is process-level, not privilege- or network-level
 
-`README.md:116` states this plainly and the docs carry the same honesty.
+`README.md:178` states this plainly and the docs carry the same honesty.
 Generated code runs as a separate non-root process with `-I` and a timeout, but
 it retains full network egress (which the system prompt actively *encourages*,
 `main.py:121-131`), can reach the `ollama` service directly on the compose
