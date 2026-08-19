@@ -209,12 +209,27 @@ user gave you, or logic/math you can execute" (`main.py:104-105`). Arithmetic,
 parsing, text transforms, and date math are executed rather than guessed, and
 the answer is derived from `print()`ed stdout (`main.py:134`).
 
-### 5.5 Conversational / explanatory questions
+### 5.5 Conversational / explanatory questions — the DIRECT protocol does not fire
 
-"Explain X" style questions take the DIRECT protocol (`main.py:138-143`): the
-model answers under an `Answer:` heading with no fenced block, `code` is `None`,
-and the turn returns immediately after a `💬 [LLaMA] No code produced` status
-line (`main.py:480-482`, `README.md:103`).
+*Corrected 2026-08-18. The previous text asserted the behaviour below as fact;
+it is measured at 0/30 and has been false for as long as it has been written.*
+
+`SYSTEM_PROMPT` does offer a DIRECT protocol for questions needing no
+computation (`main.py:169-174`): answer under an `Answer:` heading, emit no
+fenced block. `agentic_turn()` honours it — the extractor returning nothing is
+the one branch that skips execution, and it prints `💬 [LLaMA] No code
+produced — returning direct answer.` (`main.py:1072-1074`).
+
+**That branch is not reached on the shipped model.** Measured 2026-08-10,
+`llama3.1:8b` (Q4_K_M) via the compose sidecar, N=30 on *"explain what a Python
+closure is, with a short example"*: **CODE 30/30, DIRECT 0/30**, 95 % Wilson
+**[0.000, 0.114]**. `fence_matches == 1` in all thirty, so this is not the
+two-block trap; all thirty parsed, defined a function and printed a computed
+value. Source `v0-c4-general-knowledge.jsonl` on `feature/SPEC-PROMPT-001`,
+re-derived 2026-08-12 (`SPEC-ILLUSTRATE-001` §2.2).
+
+What happens instead is §5.4's path applied to an illustration. `README.md:124`
+documents it for the user, with a transcript of one of the thirty. See §6.15.
 
 ### 5.6 Self-correcting execution
 
@@ -434,6 +449,34 @@ bootstrap, and that `--doctor` prints no stored value. It cannot assert
 behaviour. A harness is deliberately out of scope: a test framework introduced
 as a rider on a `LOW`-priority feature is a framework nobody maintains. If the
 launcher grows again, it should be its own piece of work.
+
+### 6.15 Illustrative code is executed, narrated and stored as a solution
+
+`extract_last_python_block()` (`main.py:447-449`) is a regex, and the only
+branch that avoids execution (`main.py:1072-1074`) is taken solely when it
+finds nothing. Nothing in the path distinguishes a block meant to *illustrate*
+from one meant to *run*, because the distinction is not in the block — it is in
+the request. §5.5 records how often that matters: **30/30**.
+
+So an "explain X" turn writes the illustration to a scratch directory, runs it
+under `python -I`, renders an `Execution OK` panel, pays a second LLM round
+trip to narrate a result nobody asked for, and captures the turn into solution
+memory (`main.py:1143-1152`). `format_recall_block()` (`memory.py:383-391`)
+later re-injects it under `PRIOR SUCCESSFUL SOLUTION — reference only` into a
+similar question, and a second "explain X" is exactly the shape that clears the
+0.65 similarity floor. **The defect feeds itself.**
+
+Nothing raises, nothing exits non-zero, and `main.py` imports no logging module,
+so there is no line for a bug report to quote — the turn is byte-for-byte what a
+correct computation turn looks like. That is worse than an error. The cost is
+one extra model round trip per turn, up to three when the illustration fails,
+plus one subprocess and one persistent write.
+
+`SPEC-ILLUSTRATE-001` specifies a structural screen — the block parses, imports
+nothing, and references no name it does not itself bind — and it is **not
+shipped**. Whether it ships at all is gated on a false-positive measurement
+(T2/T3) that has not been taken, and **I-b, "measured unusable", is admitted in
+advance as a real outcome.**
 
 ---
 
