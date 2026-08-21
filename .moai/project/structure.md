@@ -215,6 +215,17 @@ a no-op in practice and all 99 lines of `tools.py` are dead. Full discussion in
 
 ## 6. Test structure
 
+> **This section is false, and the whole document is stale.** Measured
+> 2026-08-21: `tests/` holds **13** modules, `conftest.py` and `pytest.ini` both
+> exist, and the suite runs **605** tests with a per-file coverage gate at 100 %
+> on six modules. §1's tree, §2's file table and §3's line ranges are wrong by
+> similar margins — `main.py` is **1,340** lines here, not 512. The document
+> predates SPEC-MEMORY-001 and has not been revised since.
+>
+> It is left standing rather than patched piecemeal, because a document that is
+> half-corrected reads as verified. §7 below is new and was written against the
+> tree; nothing else in this file has been.
+
 **There is none.**
 
 - No `tests/` directory, no `conftest.py`, no `test_*.py` or `*_test.py` file
@@ -243,3 +254,58 @@ Harder to test as currently written, because they are coupled to the global
 `agentic_turn()` takes its client as a parameter, so it is fake-able, but its
 retry bound reads the module-level `MAX_RETRIES` constant (`main.py:54`,
 `main.py:325`) rather than an argument, which forces monkeypatching.
+
+---
+
+## 7. `probe/` — the behavioural harness
+
+*Written 2026-08-21 against the tree, at SPEC-MODEL-001 T2a. Unlike the six
+sections above it, this one was verified.*
+
+`probe/` is the project's **first behavioural instrument of any kind**. It drives
+a real model against a real prompt variant and records which routing decision the
+model made — the measurement that produced `SPEC-ILLUSTRATE-001`'s CODE 30/30,
+DIRECT 0/30, and the one `SPEC-MODEL-001` T2 needs before the default model can
+change.
+
+| Module | Lines | Role |
+| --- | ---: | --- |
+| `run_probe.py` | 339 | The runner. `--variant`, `--task`, `--n`, `--host`; one JSON record per trial to stdout (`:330`), redirected into a `.jsonl` |
+| `aggregate.py` | 211 | Cells, rates and the 95 % Wilson interval (`:75`) that every measured claim in this project quotes |
+| `variants.py` | 184 | `V0` is `SYSTEM_PROMPT` itself; `V1`–`V3` are built from it by anchored substitution |
+| `tasks.py` | 139 | The prompt set. Five control cells and the measurement cells, with their planned N |
+| `classify.py` | 67 | CODE vs DIRECT, decided by the **production** predicate |
+| `__init__.py` | 22 | The package docstring, which is where its two hard constraints are recorded |
+
+### 7.1 Three constraints, each verified
+
+**It uses the product's own extractor, not a copy.** `classify.py:20` reads
+`from main import CODE_BLOCK_RE, extract_last_python_block`. A probe carrying its
+own regex would measure a fiction the moment the two drifted, and
+`tests/test_probe.py` walks the AST to assert no private copy exists.
+
+**It is not a test suite and must never become one.** `pytest.ini:50` sets
+`testpaths = tests`, so nothing under `probe/` is ever collected. That is
+deliberate: `.github/workflows/ci.yml` asserts `skipped == 0`, so a
+model-dependent test placed under `tests/` would either skip on a GitHub runner —
+turning the pipeline red — or block forever waiting for a model that is not there.
+What *is* gated is the harness's **structure**, by `tests/test_probe.py` (642
+lines), which runs fully offline against a fake client and carries no
+`importorskip` and no marker. The three matches for those words in that file are
+the assertion that they are absent.
+
+**It is not in the image.** `Dockerfile:43` copies eight named modules and
+`probe/` is not among them. The product never imports it; the relationship runs
+the other way, and only at measurement time.
+
+### 7.2 Where the records go
+
+`run_probe.py` writes one JSON object per trial, carrying the reply, the
+classification, the fence count, and the provenance a later reader needs —
+`model_tag`, `model_digest`, `quantisation`, `harness_commit`, `main_commit` and
+`main_sha256`. Recorded runs live under a SPEC's own directory, e.g.
+`.moai/specs/SPEC-PROMPT-001/probe-runs/*.jsonl`.
+
+**The provenance fields are the point.** A rate without the model that produced it
+is not a measurement, and this project has already had to retract one documented
+claim that was written without one.
