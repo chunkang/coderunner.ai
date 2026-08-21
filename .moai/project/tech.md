@@ -255,14 +255,14 @@ the launcher installs it (`coderunner:36-99`).
 ./coderunner --doctor     # diagnostic report (but see product.md Section 6.4)
 ```
 
-`--doctor` prints fifteen fields (`coderunner:540-608`): OS and architecture,
+`--doctor` prints fifteen fields (`coderunner:646-714`): OS and architecture,
 docker binary path, docker version, the detected compose command, daemon
 reachability, image presence, ollama container status, pulled model list, the
 `coderunner_ollama_data` volume mountpoint, the `coderunner_app_data` volume
 mountpoint, **the chat model and whether it is present**, the embedding model
 and whether it is present (or `disabled (CODERUNNER_MEMORY=0)`), the bootstrap
 log path, the keychain backend, and the stored secret names and count. It exits
-0 (`coderunner:607`).
+0 (`coderunner:713`).
 
 *The count said twelve until 2026-08-21 and was wrong by two before the chat-model
 row was added — the keychain fields arrived at SPEC-KEYCHAIN-001 and this sentence
