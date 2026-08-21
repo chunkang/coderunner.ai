@@ -106,7 +106,7 @@ The user's levers, all documented in `README.md`:
 
 **Not** the target audience: anyone needing to run untrusted or adversarial
 prompts against a sensitive host. See Known Limitations (Section 6) and the
-sandboxing note at `README.md:116`.
+sandboxing note at `README.md:178`.
 
 ---
 
@@ -174,7 +174,7 @@ Twenty-one user-visible behaviors, each mapped to the code that implements it.
 
 ### 5.1 Live data lookup (the README reference scenario)
 
-Prompt: **"What's the current weather in Seoul in Celsius?"** (`README.md:61`)
+Prompt: **"What's the current weather in Seoul in Celsius?"** (`README.md:88`)
 
 Flow, as coded:
 
@@ -209,18 +209,33 @@ user gave you, or logic/math you can execute" (`main.py:104-105`). Arithmetic,
 parsing, text transforms, and date math are executed rather than guessed, and
 the answer is derived from `print()`ed stdout (`main.py:134`).
 
-### 5.5 Conversational / explanatory questions
+### 5.5 Conversational / explanatory questions — the DIRECT protocol does not fire
 
-"Explain X" style questions take the DIRECT protocol (`main.py:138-143`): the
-model answers under an `Answer:` heading with no fenced block, `code` is `None`,
-and the turn returns immediately after a `💬 [LLaMA] No code produced` status
-line (`main.py:480-482`, `README.md:103`).
+*Corrected 2026-08-18. The previous text asserted the behaviour below as fact;
+it is measured at 0/30 and has been false for as long as it has been written.*
+
+`SYSTEM_PROMPT` does offer a DIRECT protocol for questions needing no
+computation (`main.py:169-174`): answer under an `Answer:` heading, emit no
+fenced block. `agentic_turn()` honours it — the extractor returning nothing is
+the one branch that skips execution, and it prints `💬 [LLaMA] No code
+produced — returning direct answer.` (`main.py:1072-1074`).
+
+**That branch is not reached on the shipped model.** Measured 2026-08-10,
+`llama3.1:8b` (Q4_K_M) via the compose sidecar, N=30 on *"explain what a Python
+closure is, with a short example"*: **CODE 30/30, DIRECT 0/30**, 95 % Wilson
+**[0.000, 0.114]**. `fence_matches == 1` in all thirty, so this is not the
+two-block trap; all thirty parsed, defined a function and printed a computed
+value. Source `v0-c4-general-knowledge.jsonl` on `feature/SPEC-PROMPT-001`,
+re-derived 2026-08-12 (`SPEC-ILLUSTRATE-001` §2.2).
+
+What happens instead is §5.4's path applied to an illustration. `README.md:124`
+documents it for the user, with a transcript of one of the thirty. See §6.15.
 
 ### 5.6 Self-correcting execution
 
 If the first script raises, the red `Execution FAILED` panel is shown, stderr is
 sent back, and attempt 2 begins from the model's diagnosis
-(`main.py:527-539`, `README.md:101`).
+(`main.py:527-539`, `README.md:122`).
 
 ---
 
@@ -261,12 +276,32 @@ saying so, precisely so it can be reverted on its own without touching solution
 memory. Should it ever be reverted, this limitation returns exactly as written
 above.
 
-### 6.3 Stale-image hazard after editing source
+### 6.3 Stale-image hazard after editing source — **RESOLVED**
 
-`coderunner:163` builds only when `docker image inspect coderunner-ai:latest`
-fails — i.e. only when the image is absent. Editing `main.py` or `tools.py` does
-**not** trigger a rebuild; the launcher silently keeps running the old image
-until the user manually runs `docker compose build coderunner`.
+*Kept rather than deleted, following §6.2: the gap was real, it was invisible by
+construction, and the fix is one gate that can be reverted on its own.*
+
+The original defect: the launcher built only when `docker image inspect
+coderunner-ai:latest` failed — i.e. only when the image was absent. Since the
+`.py` files are baked in by the Dockerfile's `COPY` lines, editing `main.py` or
+`tools.py` did **not** trigger a rebuild; the launcher silently kept running the
+old image until the user ran `docker compose build coderunner` by hand. Nothing
+reported it, so the symptom was an edit that appeared to do nothing at all.
+
+`coderunner:567-579` now branches three ways: build when the image is absent,
+rebuild when `image_is_stale()` (`coderunner:542-565`) is true, and otherwise do
+nothing. Staleness compares each baked-in file's mtime — `image_sources()`
+(`coderunner:533-536`) reads that list from the Dockerfile's own `COPY` lines
+rather than restating it — against the image's `LastTagTime` (`image_epoch()`,
+`coderunner:518-525`). **Unreadable is stale:** a date that will not parse or a
+file that will not stat returns 0 and rebuilds. `README.md:17` documents the
+behaviour and its price — 0.375 s for a rebuild with nothing to do, because the
+layer cache does the real work.
+
+What the gate cannot see is **content** (`coderunner:482-486`). `git checkout`
+writes a fresh mtime onto an identical file and buys one rebuild that changes
+nothing, and a file restored with an *older* mtime is missed entirely. The gate
+decides only "might this differ", never "does this differ".
 
 ### 6.4 `--doctor` has heavy side effects
 
@@ -278,7 +313,7 @@ It is not a read-only health check.
 
 ### 6.5 The sandbox is process-level, not privilege- or network-level
 
-`README.md:116` states this plainly and the docs carry the same honesty.
+`README.md:178` states this plainly and the docs carry the same honesty.
 Generated code runs as a separate non-root process with `-I` and a timeout, but
 it retains full network egress (which the system prompt actively *encourages*,
 `main.py:121-131`), can reach the `ollama` service directly on the compose
@@ -434,6 +469,34 @@ bootstrap, and that `--doctor` prints no stored value. It cannot assert
 behaviour. A harness is deliberately out of scope: a test framework introduced
 as a rider on a `LOW`-priority feature is a framework nobody maintains. If the
 launcher grows again, it should be its own piece of work.
+
+### 6.15 Illustrative code is executed, narrated and stored as a solution
+
+`extract_last_python_block()` (`main.py:447-449`) is a regex, and the only
+branch that avoids execution (`main.py:1072-1074`) is taken solely when it
+finds nothing. Nothing in the path distinguishes a block meant to *illustrate*
+from one meant to *run*, because the distinction is not in the block — it is in
+the request. §5.5 records how often that matters: **30/30**.
+
+So an "explain X" turn writes the illustration to a scratch directory, runs it
+under `python -I`, renders an `Execution OK` panel, pays a second LLM round
+trip to narrate a result nobody asked for, and captures the turn into solution
+memory (`main.py:1143-1152`). `format_recall_block()` (`memory.py:383-391`)
+later re-injects it under `PRIOR SUCCESSFUL SOLUTION — reference only` into a
+similar question, and a second "explain X" is exactly the shape that clears the
+0.65 similarity floor. **The defect feeds itself.**
+
+Nothing raises, nothing exits non-zero, and `main.py` imports no logging module,
+so there is no line for a bug report to quote — the turn is byte-for-byte what a
+correct computation turn looks like. That is worse than an error. The cost is
+one extra model round trip per turn, up to three when the illustration fails,
+plus one subprocess and one persistent write.
+
+`SPEC-ILLUSTRATE-001` specifies a structural screen — the block parses, imports
+nothing, and references no name it does not itself bind — and it is **not
+shipped**. Whether it ships at all is gated on a false-positive measurement
+(T2/T3) that has not been taken, and **I-b, "measured unusable", is admitted in
+advance as a real outcome.**
 
 ---
 

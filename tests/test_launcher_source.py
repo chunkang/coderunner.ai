@@ -176,7 +176,7 @@ def test_the_run_env_array_is_never_expanded_unguarded() -> None:
     it passes every check the author runs and breaks on the first clean Mac.
     """
     text = source()
-    assert 'RUN_ENV+=' in text, "the fixture is vacuous: there is no RUN_ENV array"
+    assert "RUN_ENV+=" in text, "the fixture is vacuous: there is no RUN_ENV array"
 
     unguarded = [
         line
@@ -224,14 +224,9 @@ def test_the_guarded_expansion_survives_an_empty_array_under_set_u() -> None:
     assert "run --rm" in expansion, "the guard has drifted off the compose run line"
 
     script = (
-        'set -Eeuo pipefail\n'
-        'RUN_ENV=()\n'
-        'set -- ${RUN_ENV[@]+"${RUN_ENV[@]}"}\n'
-        'echo "argc=$#"\n'
+        'set -Eeuo pipefail\nRUN_ENV=()\nset -- ${RUN_ENV[@]+"${RUN_ENV[@]}"}\necho "argc=$#"\n'
     )
-    completed = subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True, check=False
-    )
+    completed = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "argc=0"
 
@@ -257,9 +252,9 @@ def test_the_secret_subcommands_are_dispatched_before_the_bootstrap(flag: str) -
     somewhere. It needs no daemon, no image, no compose, no Ollama and no model.
     """
     text = source()
-    dispatch = text.index(f'{flag})')
+    dispatch = text.index(f"{flag})")
     bootstrap = text.index(': >"$LOG_FILE"')
-    compose_run = text.index('run --rm --name')
+    compose_run = text.index("run --rm --name")
 
     assert dispatch < bootstrap, f"{flag} is dispatched after the bootstrap begins"
     assert dispatch < compose_run
@@ -271,7 +266,7 @@ def test_no_subcommand_falls_through_to_compose_run() -> None:
     nothing and discards it silently, so falling through means the flag becomes
     an invisible no-op and the user's password is never stored."""
     text = source()
-    dispatch = text[text.index("--set-secret)") : text.index(": >\"$LOG_FILE\"")]
+    dispatch = text[text.index("--set-secret)") : text.index(': >"$LOG_FILE"')]
     assert dispatch.count("exit 0") >= len(SUBCOMMANDS)
 
 
@@ -349,7 +344,7 @@ def test_a_name_is_supplied_only_on_rc_zero_and_a_non_empty_value() -> None:
     collect = text[text.index("keychain_collect_env()") : text.index("# --- 1. install Docker")]
 
     assert 'if ! value="$(keychain_read "$name")"; then' in collect  # rc
-    assert 'if [[ -z "$value" ]]; then' in collect                    # non-empty
+    assert 'if [[ -z "$value" ]]; then' in collect  # non-empty
     assert collect.count("continue") >= 2, "a failing name must be skipped, not fatal"
 
 
@@ -629,3 +624,114 @@ def test_the_launch_warned_flag_reaches_the_container_only_when_it_is_set() -> N
     assert "CODERUNNER_LAUNCH_WARNED" in (_ROOT / "main.py").read_text(encoding="utf-8"), (
         "the launcher exports a name main.py never reads"
     )
+
+
+# ------------------------------------------------------------------------------
+# Stale-image rebuild gate — the two defects that make this section silently wrong
+# ------------------------------------------------------------------------------
+#
+# Measured 2026-08-15, and both were found by testing rather than by reading. The
+# gate before this one was `if ! docker image inspect` alone, which builds only
+# when the image is ABSENT; the author's own image dated 2026-08-07 and had no
+# keychain.py in /app at all, so five days of merged work never ran. Dockerfile:37
+# had predicted exactly that. Replacing the gate introduced two more failures that
+# look correct in the source, which is why they are pinned here.
+
+
+def stale_gate(text: str) -> str:
+    """The staleness helpers and the build gate, comments already stripped.
+
+    Bounded by `have_model()` rather than by the `# --- 5a.` section marker:
+    `code()` strips whole-line comments, so every section marker in this file's
+    input is already gone by the time a slice could look for one.
+    """
+    return text[text.index("mtime_of()") : text.index("have_model()")]
+
+
+def test_the_gate_dates_the_image_by_last_tag_time_and_not_by_created() -> None:
+    """`.Created` DOES NOT MOVE when the content hash is unchanged.
+
+    Measured by touching main.py without altering a byte and building twice:
+
+        .Created              10:24:28 -> 10:24:28   (unchanged)
+        .Metadata.LastTagTime 10:28:23 -> 10:31:05   (advances)
+
+    BuildKit reuses the cached image config, so a gate reading `.Created` never
+    clears: `git checkout` writes a fresh mtime, the rebuild changes nothing,
+    the timestamp stays put, and EVERY subsequent launch announces a rebuild.
+    The failure is invisible in review — `.Created` is the obvious field, and
+    the obvious field is the wrong one.
+    """
+    gate = stale_gate(code())
+    assert ".Metadata.LastTagTime" in gate, "the gate no longer dates the image by its tag time"
+    assert ".Created" not in gate, (
+        "the gate reads .Created, which does not advance on a cache-hit build; "
+        "the rebuild prompt will never clear"
+    )
+
+
+def test_the_mtime_comparison_admits_an_edit_made_in_the_same_second() -> None:
+    """`-ge`, not `-gt`. Both sides are whole seconds.
+
+    A no-op build takes 0.375s, so an edit landing in the same second as the
+    build before it is genuinely newer and compares EQUAL. Measured: `touch
+    settings.py` immediately after a build reported FRESH under `-gt`, which is
+    the one answer that loses an edit. `-ge` costs at most one spare no-op
+    rebuild and cannot latch, because each build advances LastTagTime.
+    """
+    gate = stale_gate(code())
+    assert re.search(r'\[ "\$mtime" -ge "\$built" \]', gate), (
+        "the comparison is not -ge; an edit sharing a second with the last build is lost"
+    )
+    assert "-gt" not in gate, "-gt reads a same-second edit as fresh"
+
+
+def test_the_file_list_is_derived_from_the_dockerfile_rather_than_restated() -> None:
+    """A second copy of the COPY line is the failure this whole section prevents.
+
+    `params.py` and `settings.py` were missing from the Dockerfile's own COPY
+    line for a full SPEC (fc19a07). A launcher that restated that list would
+    reproduce the same class of drift one file further away, so the list is read
+    out of the Dockerfile at run time — the rule tests/test_source_seam.py
+    already applies to main.py's import block.
+    """
+    gate = stale_gate(code())
+    assert "sed -n" in gate and "Dockerfile" in gate, (
+        "the file list is no longer read from the Dockerfile"
+    )
+    modules = ["main.py", "memory.py", "recall.py", "vectorstore.py", "params.py", "settings.py"]
+    restated = [name for name in modules if name in gate]
+    assert not restated, f"the launcher restates the Dockerfile's COPY list: {restated}"
+
+
+def test_an_undatable_image_rebuilds_rather_than_being_assumed_fresh() -> None:
+    """Unreadable is stale. A spare 0.375s is the cheaper of the two errors."""
+    gate = stale_gate(code())
+    assert re.search(r'built="\$\(image_epoch\)" \|\| return 0', gate), (
+        "an image whose tag time cannot be read is treated as fresh"
+    )
+    assert re.search(r"case \"\$built\" in ''\|\*\[!0-9\]\*\) return 1", gate), (
+        "a non-numeric or empty timestamp is no longer rejected"
+    )
+
+
+def test_the_gate_still_builds_when_the_image_is_absent() -> None:
+    """The original first-run behaviour survives beside the new branch."""
+    gate = stale_gate(code())
+    assert 'if ! docker image inspect "$IMAGE_NAME"' in gate
+    assert "elif image_is_stale; then" in gate
+
+
+def test_the_rebuild_notice_does_not_cost_the_user_their_banner() -> None:
+    """say(), never warn().
+
+    warn() sets LAUNCH_WARNED, whose entire purpose is to stop main.py clearing
+    the screen so a keychain degradation line survives to be read
+    (coderunner:27-34). "I rebuilt because you edited something" is not worth
+    that.
+    """
+    gate = stale_gate(code())
+    assert "warn " not in gate and "warn(" not in gate, (
+        "the rebuild notice suppresses the banner clear"
+    )
+    assert 'say "Source is newer than' in gate
