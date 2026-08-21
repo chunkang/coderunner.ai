@@ -416,16 +416,51 @@ def test_the_never_used_state_emits_no_line_and_a_fault_emits_one() -> None:
 
 
 # ------------------------------------------------------------------------------
-# AC-DOCTOR — fourteen fields, names only
+# AC-DOCTOR — fifteen fields, names only
 # ------------------------------------------------------------------------------
 
 
-def test_doctor_prints_fourteen_fields() -> None:
+def test_doctor_prints_fifteen_fields() -> None:
     labels = field_labels(doctor_branch(source()))
 
-    assert len(labels) == 14, f"--doctor prints {len(labels)} fields: {labels}"
+    assert len(labels) == 15, f"--doctor prints {len(labels)} fields: {labels}"
     assert "keychain backend" in labels
     assert "stored secrets" in labels
+    assert "chat model" in labels
+
+
+def test_doctor_reports_the_chat_model_and_not_only_the_embedding_one() -> None:
+    """SPEC-MODEL-001 T5(c), D5's mechanical half.
+
+    `--doctor` reported the presence of the *secondary* model and never the
+    primary one. That is a hole in exactly the place it costs most: `have_model()`
+    matches whole lines with `grep -qx`, so a tag that differs from `ollama list`'s
+    column 1 by one byte re-pulls the chat model on **every launch, forever,
+    silently** — and the diagnostic a user would run to find out said nothing
+    about it. This project has already been bitten once by that mechanism, on the
+    embedding model; the comment at the top of `have_model()` is the scar.
+
+    The row is asserted to resolve the tag the same way the pull path does, so a
+    future edit that changes one default and not the other fails here.
+    """
+    branch = doctor_branch(source())
+
+    assert "printf '  chat model       : %s (%s)\\n'" in branch
+    assert 'doctor_model="${CODERUNNER_MODEL:-llama3.1:8b}"' in branch
+    assert 'have_model "$doctor_model"' in branch
+
+
+def test_the_chat_model_row_precedes_the_embed_model_row() -> None:
+    """The primary model is reported before the secondary one.
+
+    Ordering is not decoration in a diagnostic that gets pasted into an issue:
+    the reader scans top-down and stops when they think they have the answer.
+    Reporting the embedding model's presence above the chat model's invites the
+    conclusion that the chat model was fine.
+    """
+    branch = doctor_branch(source())
+
+    assert branch.index("chat model  ") < branch.index("embed model  ")
 
 
 def test_the_two_new_fields_keep_the_existing_column() -> None:
