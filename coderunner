@@ -658,6 +658,17 @@ if [[ "${1:-}" == "--doctor" ]]; then
   printf '  ollama models    : %s\n' "${ollama_models:-none}"
   printf '  ollama volume    : %s\n' "$(docker volume inspect coderunner_ollama_data --format '{{.Mountpoint}}' 2>/dev/null || echo 'missing')"
   printf '  app volume       : %s\n' "$(docker volume inspect coderunner_app_data --format '{{.Mountpoint}}' 2>/dev/null || echo 'missing')"
+  # The CHAT model is reported before the embedding one, and reporting it at all
+  # is newer than reporting the embedding one. `have_model()` matches whole lines
+  # with `grep -qx`, so a tag differing from `ollama list`'s column 1 by one byte
+  # re-pulls on every launch, forever, and says nothing — the failure this file
+  # already carries a warning about, one model over. A diagnostic that reported
+  # the secondary model's presence and not the primary one's could not have found
+  # it. The default is spelled the same here as at the pull site above; they are
+  # two copies of one string and are asserted to agree.
+  doctor_model="${CODERUNNER_MODEL:-llama3.1:8b}"
+  printf '  chat model       : %s (%s)\n' "$doctor_model" \
+    "$(have_model "$doctor_model" && echo present || echo MISSING)"
   if [[ "${CODERUNNER_MEMORY:-1}" != "0" ]]; then
     doctor_embed="${CODERUNNER_EMBED_MODEL:-nomic-embed-text:latest}"
     printf '  embed model      : %s (%s)\n' "$doctor_embed" \

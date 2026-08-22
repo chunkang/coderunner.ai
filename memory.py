@@ -364,6 +364,8 @@ PRIOR SUCCESSFUL SOLUTION — reference only.
 A previous task was solved successfully. It may or may not apply to the current
 task. {sentence} Do not copy it blindly; adapt it.
 
+Authored by: {chat_model}
+
 Previous task: {task}
 
 Approach that worked:
@@ -381,9 +383,22 @@ Its actual output was:
 
 
 def format_recall_block(record: SolutionRecord) -> str:
-    """Render a stored solution as the few-shot system message body (M4)."""
+    """Render a stored solution as the few-shot system message body (M4).
+
+    ``chat_model`` comes from the RECORD, never from the session (SPEC-MODEL-001
+    T3, option M-c). The eligibility filter (``vectorstore.py:601``) gates on
+    ``embed_model`` and ``dim`` and deliberately not on ``chat_model``, so a
+    record authored by one chat model is eligible for injection into a turn
+    driven by another. That reuse is kept — stored code is never replayed (C2),
+    so a working script stays a working script whoever wrote it — but the block
+    asks the model to adapt prior work, and it cannot weigh how far to trust that
+    work without knowing whose it is. Rendering the session's model instead would
+    label every record self-authored and assert the opposite of the truth in the
+    one case that matters.
+    """
     return _RECALL_TEMPLATE.format(
         sentence=ADAPT_OR_IGNORE_SENTENCE,
+        chat_model=record.chat_model,
         task=record.task,
         thought=record.thought,
         code=record.code,

@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 import memory
@@ -157,3 +159,41 @@ def test_inject_recall_into_a_single_message_puts_the_block_first() -> None:
     result = memory.inject_recall(messages, "BLOCK")
     assert [message["role"] for message in result] == ["system", "user"]
     assert result[-2]["content"] == "BLOCK"
+
+
+# ------------------------------------------------------------------------------
+# SPEC-MODEL-001 T3, option M-c — the injected block names its author
+# ------------------------------------------------------------------------------
+
+
+def test_recall_block_names_the_model_that_authored_the_solution(
+    sample_record: SolutionRecord,
+) -> None:
+    """M-c. `_eligibility_filter()` (`vectorstore.py:601`) gates on `embed_model`
+    and `dim` and NOT on `chat_model`, so a record authored by one chat model is
+    eligible for injection into a turn driven by another. That is deliberate and
+    is kept: stored code is never replayed (C2), so a working script stays a
+    working script whoever wrote it.
+
+    What was missing is the provenance. The block asks the model to adapt prior
+    work; a model cannot weigh how far to trust that work without knowing whether
+    it is its own. So the authoring tag is rendered, from a field the store
+    already carries and already reads back.
+    """
+    block = memory.format_recall_block(sample_record)
+
+    assert CHAT_MODEL in block
+
+
+def test_the_authoring_model_is_rendered_from_the_record_not_the_session(
+    sample_record: SolutionRecord,
+) -> None:
+    """The tag must come from `record.chat_model`, because the whole point is the
+    case where the two differ. Rendering the *session's* model would label every
+    record as self-authored and quietly assert the opposite of the truth.
+    """
+    foreign = replace(sample_record, chat_model="phi3.5:3.8b-mini-instruct-q4_0")
+    block = memory.format_recall_block(foreign)
+
+    assert "phi3.5:3.8b-mini-instruct-q4_0" in block
+    assert CHAT_MODEL not in block
