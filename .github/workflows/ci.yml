@@ -308,17 +308,47 @@ jobs:
         #   ---
         #   573
         #
+        #   +30 SPEC-MODEL-001 T2a tests/test_probe.py — the probe harness ported
+        #        from feature/SPEC-PROMPT-001, gating its STRUCTURE offline: that
+        #        probe/classify.py imports the production extractor rather than
+        #        holding a copy of the fence regex, and that this file itself
+        #        carries no importorskip and no marker
+        #    +6 SPEC-ILLUSTRATE-001 tests/test_launcher_source.py — the launcher
+        #        rebuild gate: file mtime against the image's LastTagTime, the
+        #        source list read from the Dockerfile's own COPY lines, and
+        #        unreadable treated as stale
+        #    +2 SPEC-MODEL-001 T5(c) tests/test_launcher_source.py — the --doctor
+        #        chat-model row's shape and its ordering before the embed row.
+        #        test_doctor_prints_fourteen_fields became ...fifteen..., so that
+        #        one is REPLACED and contributes nothing
+        #    +2 SPEC-MODEL-001 T3 tests/test_memory_recall_block.py — the recall
+        #        block names its authoring model, rendered from record.chat_model
+        #        and never from the session
+        #   ---
+        #   613
+        #
         # MEASURED, NOT COMPUTED. The arithmetic above records where the number
         # came from; the number itself was taken from the `tests` attribute of a
         # real run's pytest-results.xml — the same file this step parses. A floor
         # derived by adding an expected delta cannot see a test that stopped
         # being COLLECTED, which is the whole thing this gate exists to catch.
         #
-        # 573 was measured on the HOST (2026-08-12, Python 3.11.14), not on a
-        # runner: this branch has never had a CI run, because this workflow
-        # triggers only on push to `main` and PRs to `main`. The floor is
-        # therefore the one number here that the pipeline has not yet checked
-        # against itself. See .moai/specs/SPEC-CI-001/verification-T3.md 4.2.
+        # 613 measured on the HOST 2026-08-28, Python 3.11.14, from
+        # `pytest --junitxml`: tests=613 failures=0 errors=0 skipped=0.
+        #
+        # WHY IT MOVED 40 AT ONCE, WHICH IS THE PART WORTH READING. The floor sat
+        # at 573 across two merged PRs (#8, #9) and did not fail either of them,
+        # because a floor that trails the real count is safe — the same way the
+        # 296 floor went unnoticed while the suite drifted to 298. Safe is not
+        # the same as useful: at 573 against 613, forty tests could have stopped
+        # being collected and this gate would still have gone green. Raise it in
+        # the same change that adds the tests, or it silently stops guarding
+        # them.
+        #
+        # The 2026-08-12 note that this floor "has not yet been checked by the
+        # pipeline against itself" is now discharged: both PRs above ran this
+        # workflow on a runner and passed. See
+        # .moai/specs/SPEC-CI-001/verification-T3.md 4.2.
         #
         # This step is NOT a second coverage gate (N5) — it reads no coverage
         # figure and restates no floor. It counts tests.
@@ -329,7 +359,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 573
+          MIN_PASSED = 613
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):
