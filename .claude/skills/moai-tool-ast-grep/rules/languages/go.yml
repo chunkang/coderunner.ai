@@ -5,7 +5,7 @@ language: go
 severity: error
 message: "Error is being ignored. Handle or explicitly ignore with comment."
 rule:
-  pattern: $RESULT, _ := $FUNC($$$ARGS)
+  pattern: "$RESULT, _ := $FUNC($$$ARGS)"
 
 ---
 id: error-without-wrap
