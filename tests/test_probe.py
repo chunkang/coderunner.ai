@@ -303,6 +303,93 @@ def test_every_task_id_is_unique_across_the_task_and_control_sets() -> None:
 
 
 # ------------------------------------------------------------------------------
+# 3.5 SPEC-ILLUSTRATE-001's compute cell, and the fence around SPEC-PROMPT-001's
+# ------------------------------------------------------------------------------
+# This cell measures the one thing SPEC-PROMPT-001's corpus cannot see. The
+# candidate predicate (SPEC-ILLUSTRATE-001 spec.md 3.4) is "the block parses, it
+# imports nothing, and every loaded name is bound in-block or is a builtin", and
+# that SPEC states its own limit in its own words: product.md 5.4 turns are
+# closed and import-free TOO, and no existing cell measures them.
+#
+# So a prompt whose correct block needs an import is the EASY case — the
+# predicate correctly stays silent and the run learns nothing. This cell is the
+# hard case by construction: the correct block is closed and import-free, so the
+# predicate FIRES, and the answer is the printed value, so firing costs the user
+# their answer. That is the false-positive rate T3 decides on.
+
+
+def test_the_compute_cell_exists_with_its_planned_shape() -> None:
+    """plan.md T1: one Task, kind compute, N=30, expect_direct False.
+
+    N=30 is not decoration. It is the same N as the c4 cell this rate is compared
+    against, and a comparison between cells at different N is not one.
+    """
+    cell = tasks.TASKS["i1_compute"]
+    assert cell.kind == "compute", f"compute cell declares kind {cell.kind!r}"
+    assert cell.n == 30, f"compute cell plans N={cell.n}; c4 is measured at 30"
+    assert cell.expect_direct is False, "the compute cell's correct route is CODE, not DIRECT"
+
+
+def test_the_compute_cells_prompt_carries_its_own_operands() -> None:
+    """The block must be self-contained, which starts with the REQUEST being so.
+
+    If the operands are not in the prompt the model must fetch or invent them,
+    the correct block stops being import-free, and the cell measures the easy
+    case it was written to avoid.
+    """
+    text = tasks.TASKS["i1_compute"].text
+    assert "2" in text and "1000" in text, (
+        f"compute prompt {text!r} does not supply its own operands"
+    )
+
+
+def test_the_compute_cell_is_outside_spec_prompt_001s_two_sets() -> None:
+    """N7: SPEC-PROMPT-001's evidence is not this SPEC's to edit.
+
+    Reachable by id and present in ALL_TASKS, so `--task i1_compute` and
+    `--task all` both find it; absent from the two tuples whose membership
+    defines what `--task measurement` and `--task controls` mean.
+    """
+    cell = tasks.TASKS["i1_compute"]
+    assert cell in tasks.ALL_TASKS
+    assert cell not in tasks.MEASUREMENT_TASKS, "the compute cell is not a SPEC-PROMPT-001 cell"
+    assert cell not in tasks.CONTROL_SET, "the compute cell expects CODE; controls expect DIRECT"
+
+
+def test_spec_prompt_001s_eight_cells_are_unchanged() -> None:
+    """N7, as a gate rather than an intention.
+
+    Spelled out rather than derived from the module, because a test that reads
+    its expectations out of the thing under test asserts only that the module
+    agrees with itself. Every prompt is quoted verbatim into verification-T3.md;
+    a byte changed here silently decouples that record from the code that
+    produced it, and nothing else in the suite would notice.
+    """
+    assert [(t.id, t.n, t.expect_direct) for t in tasks.MEASUREMENT_TASKS] == [
+        ("target", 30, False),
+        ("off_example", 20, False),
+        ("tool_reachable", 20, False),
+    ]
+    assert [(t.id, t.n, t.expect_direct) for t in tasks.CONTROL_SET] == [
+        ("c1_conversational", 30, True),
+        ("c2_conversational", 30, True),
+        ("c3_opinion", 30, True),
+        ("c4_general_knowledge", 30, True),
+        ("c5_general_knowledge", 30, True),
+    ]
+    assert tasks.TASKS["target"].text == (
+        "check my gmail for recent 7 days and let me know the interview opportunities"
+    )
+    assert tasks.TASKS["c4_general_knowledge"].text == (
+        "explain what a Python closure is, with a short example"
+    )
+    assert tasks.TASKS["c5_general_knowledge"].text == (
+        'who wrote the book "The Mythical Man-Month"?'
+    )
+
+
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # 4. Record schema completeness
 # ------------------------------------------------------------------------------
 
