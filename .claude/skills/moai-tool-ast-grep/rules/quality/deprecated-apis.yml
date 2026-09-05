@@ -28,23 +28,32 @@ fix: decodeURIComponent($STR)
 
 ---
 id: deprecated-component-will-mount
-language: typescriptreact
+language: tsx
 severity: error
 message: "componentWillMount is deprecated. Use componentDidMount or useEffect."
 rule:
-  pattern: componentWillMount() { $$$BODY }
+  # A bare method definition is not a standalone program. `context` wraps it in
+  # a class so it parses; `selector` narrows the match back to the method.
+  pattern:
+    context: |
+      class C { componentWillMount() { $$$BODY } }
+    selector: method_definition
 
 ---
 id: deprecated-component-will-receive-props
-language: typescriptreact
+language: tsx
 severity: error
 message: "componentWillReceiveProps is deprecated. Use getDerivedStateFromProps or useEffect."
 rule:
-  pattern: componentWillReceiveProps($PROPS) { $$$BODY }
+  # Same reason as componentWillMount above.
+  pattern:
+    context: |
+      class C { componentWillReceiveProps($PROPS) { $$$BODY } }
+    selector: method_definition
 
 ---
 id: deprecated-find-dom-node
-language: typescriptreact
+language: tsx
 severity: warning
 message: "findDOMNode is deprecated. Use refs instead."
 rule:

@@ -6,8 +6,10 @@ severity: info
 message: "Consider using f-strings for string formatting"
 rule:
   any:
-    - pattern: "$$$STR".format($$$ARGS)
-    - pattern: "$$$STR" % $ARGS
+    # Single-quoted: the pattern itself begins with a double quote, so an
+    # unquoted scalar ends at that quote and leaves `.format(...)` as garbage.
+    - pattern: '"$$$STR".format($$$ARGS)'
+    - pattern: '"$$$STR" % $ARGS'
 
 ---
 id: use-pathlib
@@ -27,13 +29,15 @@ language: python
 severity: warning
 message: "Use context manager (with statement) for file operations"
 rule:
-  pattern: |
-    $FILE = open($PATH)
-    $$$BODY
-    $FILE.close()
-fix: |
-  with open($PATH) as $FILE:
-      $$$BODY
+  # Same single-node constraint. Rather than require the open/close pair to be
+  # adjacent, flag any `open()` assignment that is not already inside a `with`.
+  # The `fix:` is dropped: the rewrite depended on the three-statement shape and
+  # cannot be derived from this single node.
+  pattern: $FILE = open($$$ARGS)
+  not:
+    inside:
+      kind: with_statement
+      stopBy: end
 
 ---
 id: bare-except
@@ -41,9 +45,16 @@ language: python
 severity: warning
 message: "Avoid bare except clauses. Catch specific exceptions."
 rule:
-  pattern: |
-    except:
-        $$$BODY
+  # A bare `except` clause is not a standalone program; `context` supplies the
+  # `try` so it parses, and `selector` narrows the match back to the clause.
+  # Verified not to match `except ValueError:` or `except E as e:`.
+  pattern:
+    context: |
+      try:
+          pass
+      except:
+          pass
+    selector: except_clause
 
 ---
 id: mutable-default-argument
@@ -52,8 +63,8 @@ severity: warning
 message: "Mutable default argument. Use None and initialize inside function."
 rule:
   any:
-    - pattern: def $FUNC($$$ARGS, $PARAM=[], $$$REST):
-    - pattern: def $FUNC($$$ARGS, $PARAM={}, $$$REST):
+    - pattern: "def $FUNC($$$ARGS, $PARAM=[], $$$REST):"
+    - pattern: "def $FUNC($$$ARGS, $PARAM={}, $$$REST):"
 
 ---
 id: type-comparison
@@ -83,10 +94,14 @@ language: python
 severity: info
 message: "Consider using list comprehension"
 rule:
-  pattern: |
-    $RESULT = []
-    for $ITEM in $ITER:
-        $RESULT.append($EXPR)
+  # A pattern matches ONE AST node, so the original three-statement form
+  # (`$RESULT = []` + for + append) could never parse. Match the loop itself and
+  # require an append inside it; the preceding empty-list assignment is not what
+  # makes the loop replaceable.
+  kind: for_statement
+  has:
+    stopBy: end
+    pattern: $RESULT.append($EXPR)
 
 ---
 id: use-enumerate
@@ -94,8 +109,9 @@ language: python
 severity: info
 message: "Use enumerate() instead of manual index tracking"
 rule:
-  pattern: |
-    $IDX = 0
-    for $ITEM in $ITER:
-        $$$BODY
-        $IDX += 1
+  # Same single-node constraint as above. The manual counter increment inside
+  # the loop is the signal; the `$IDX = 0` before it is not required to spot it.
+  kind: for_statement
+  has:
+    stopBy: end
+    pattern: $IDX += 1
