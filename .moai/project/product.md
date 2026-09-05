@@ -231,6 +231,24 @@ re-derived 2026-08-12 (`SPEC-ILLUSTRATE-001` §2.2).
 What happens instead is §5.4's path applied to an illustration. `README.md:124`
 documents it for the user, with a transcript of one of the thirty. See §6.15.
 
+**Confirmed on a second model, 2026-08-21.** `SPEC-MODEL-001` T2 ran the same
+prompt against `phi3.5:latest` (3.8B, Q4_0, 131072 context), N=30: **CODE 30/30,
+DIRECT 0/30** — identical to llama3.1:8b across a different model family,
+parameter count and quantisation. **The defect is therefore not a property of
+llama3.1:8b**, which SPEC-ILLUSTRATE-001 D1 argued from reasoning and now has
+from measurement.
+
+Phi-3.5 additionally emitted **two** fenced blocks in 13 of those 30 trials,
+where llama emitted exactly one in all thirty. `extract_last_python_block()`
+returns the last match, so those turns would execute whichever block came
+second. That failure mode is absent under the shipped model and is recorded
+because it is a property of the extractor rather than of either model.
+
+Phi-3.5 was evaluated as a replacement default and **rejected** (outcome P-c,
+`verification-T2.md` §5): worse on three of five control cells with
+non-overlapping 95 % Wilson intervals. `CODERUNNER_MODEL` still defaults to
+`llama3.1:8b`.
+
 ### 5.6 Self-correcting execution
 
 If the first script raises, the red `Execution FAILED` panel is shown, stderr is

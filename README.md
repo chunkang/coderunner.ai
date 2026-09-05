@@ -163,6 +163,10 @@ to the variable x in its outer scope.
 
 Nothing raises, nothing exits non-zero, and there is no log line to quote in a bug report. The cost is one extra model round trip per turn and up to three when the illustration fails, plus one subprocess and one persistent write. `SPEC-ILLUSTRATE-001` specifies a structural fix — screening blocks that are closed and import-free — and it is **not shipped**; whether it ships at all is gated on a false-positive measurement that has not yet been taken.
 
+**It is not a `llama3.1:8b` quirk, and that is now measured rather than assumed.** `SPEC-MODEL-001` ran the same prompt against `phi3.5:latest` (3.8B, Q4_0) on 2026-08-21, N=30: **DIRECT 0/30 again**, identical to LLaMA's figure across a different model family, parameter count and quantisation. A prompt-only fix would have to teach two unrelated models the same lesson; a structural screen does not care which model emitted the block.
+
+Phi-3.5 was measured as a candidate default and **rejected** — it routed measurably worse on three of five control cells, with non-overlapping 95 % Wilson intervals, so `llama3.1:8b` remains the default. It also introduced a failure LLaMA does not have: **two fenced blocks in 13 of 30 trials** on this prompt, where LLaMA emitted exactly one every time. Since the extractor takes the *last* block, those turns run whichever came second — chosen for its position, not for being runnable. The full table is in `.moai/specs/SPEC-MODEL-001/verification-T2.md`.
+
 ---
 
 ## How it works
@@ -184,6 +188,8 @@ Sandboxing note: execution runs inside the container as a non-root user, but the
 When a turn succeeds, CodeRunner stores the task, the model's reasoning, the script that ran and the real stdout, together with an embedding of the task text. On a later turn it embeds your new task, searches the store for the single most similar past task, and — if the cosine similarity is at least `0.65` — injects that prior solution as one `system` message placed immediately before your message.
 
 **Stored code is never replayed.** It enters the prompt as reference material the model is explicitly told to adapt or ignore, and every script that executes is the one the model emits in that turn. The injected block is ephemeral: it is not appended to the conversation, it goes only into attempt 1, and retries and the final grounded-answer pass never see it.
+
+**The block names the model that wrote it** — an `Authored by:` line rendered from the stored record. Eligibility is filtered on the *embedding* model and vector dimension, not the chat model, so a record written under one chat model can be retrieved into a turn driven by another. That reuse is deliberate: since the code is never replayed, a script that worked stays a script that worked whoever wrote it. But the block asks the model to adapt prior work, and it cannot judge how far to trust that work without knowing whose it is. Change `CODERUNNER_MODEL` and your existing store keeps working, correctly labelled, rather than going silently dark.
 
 Retrieval is semantic, not keyword-based. Asking *"tell me the temperature in Busan right now"* after a Seoul weather task scores 0.76 and fires; unrelated task pairs measure 0.30–0.40, so the 0.65 floor has clear air on both sides.
 
