@@ -324,8 +324,11 @@ jobs:
         #    +2 SPEC-MODEL-001 T3 tests/test_memory_recall_block.py — the recall
         #        block names its authoring model, rendered from record.chat_model
         #        and never from the session
+        #    +4 SPEC-ILLUSTRATE-001 T1 tests/test_probe.py — the compute cell's
+        #        shape, its operands, its exclusion from SPEC-PROMPT-001's two
+        #        sets, and an N7 regression pin on all eight existing cells
         #   ---
-        #   613
+        #   617
         #
         # MEASURED, NOT COMPUTED. The arithmetic above records where the number
         # came from; the number itself was taken from the `tests` attribute of a
@@ -333,8 +336,10 @@ jobs:
         # derived by adding an expected delta cannot see a test that stopped
         # being COLLECTED, which is the whole thing this gate exists to catch.
         #
-        # 613 measured on the HOST 2026-08-28, Python 3.11.14, from
-        # `pytest --junitxml`: tests=613 failures=0 errors=0 skipped=0.
+        # 617 measured on the HOST 2026-09-04, Python 3.11.14, from
+        # `pytest --junitxml`: tests=617 failures=0 errors=0 skipped=0.
+        # Superseded, and kept because a superseded measurement is still one:
+        # 613 measured on the HOST 2026-08-28, same interpreter, same way.
         #
         # WHY IT MOVED 40 AT ONCE, WHICH IS THE PART WORTH READING. The floor sat
         # at 573 across two merged PRs (#8, #9) and did not fail either of them,
@@ -359,7 +364,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 613
+          MIN_PASSED = 617
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

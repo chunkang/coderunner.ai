@@ -321,6 +321,18 @@ writes a fresh mtime onto an identical file and buys one rebuild that changes
 nothing, and a file restored with an *older* mtime is missed entirely. The gate
 decides only "might this differ", never "does this differ".
 
+
+**The content blind spot is now observed in CI, though still not prevented.**
+`.github/workflows/ci.yml`'s `image` job builds the image and hash-compares the
+eight modules on `Dockerfile:43` against the checked-out tree — a *content*
+comparison rather than an mtime one — so a file restored with an older mtime,
+invisible to the launcher's gate, fails the pipeline. Two limits are worth
+stating plainly. It runs on GitHub rather than on the developer's machine, so it
+reports after the push and not before the run; and `main` carries no branch
+protection (verified 2026-09-04), so that report blocks nothing. It converts a
+silent local hazard into a visible remote one, which is an improvement and not a
+fix.
+
 ### 6.4 `--doctor` has heavy side effects
 
 The `--doctor` branch sits at `coderunner:233`, *after* the entire bootstrap at

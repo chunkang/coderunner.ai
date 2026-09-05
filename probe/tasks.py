@@ -134,6 +134,48 @@ CONTROL_SET: tuple[Task, ...] = (
     ),
 )
 
-ALL_TASKS: tuple[Task, ...] = MEASUREMENT_TASKS + CONTROL_SET
+# ------------------------------------------------------------------------------
+# SPEC-ILLUSTRATE-001's cell — the hard case for the illustration predicate
+# ------------------------------------------------------------------------------
+# ADDITIVE ONLY (SPEC-ILLUSTRATE-001 spec.md N7, D6). Nothing above this line
+# changes by one byte: SPEC-PROMPT-001's prompts are quoted verbatim into its
+# verification-T3.md, and its evidence is not this SPEC's to edit. This cell is
+# held in its own tuple for the same reason — `--task measurement` and
+# `--task controls` must keep meaning exactly what they meant.
+#
+# WHY THIS PROMPT AND NOT AN EASIER ONE. The candidate predicate (spec.md 3.4)
+# is: the block parses, it contains no Import/ImportFrom, and every loaded Name
+# is bound in-block or is a builtin. It measured 30/30 on c4 and 0/43 where
+# execution is genuinely required — and 3.4 states its own limit in its own
+# words: "product.md 5.4 turns are closed and import-free too, and no cell
+# measures them. The predicate separates self-contained from network-bound. It
+# is being asked to separate illustration from computation."
+#
+# So a prompt whose correct block needs an import measures NOTHING: the
+# predicate correctly stays silent and the easy case passes trivially. This one
+# is the hard case by construction. `sum(int(d) for d in str(2**1000))` imports
+# nothing and binds everything it loads, so the predicate FIRES — and the answer
+# exists only as that block's stdout, so firing costs the user their answer.
+# That is the false-positive rate, and T3 decides Stage 2 on it.
+#
+# The operands are IN THE REQUEST (2, 1000), which is what keeps the correct
+# block self-contained, and the value is infeasible by hand, which is what stops
+# a model answering it without running anything. N=30 matches c4's N, because a
+# comparison between two cells measured at different N is not a comparison.
+
+COMPUTE = "compute"
+
+I1_COMPUTE = Task(
+    id="i1_compute",
+    text="what is the sum of the digits of 2 raised to the power 1000?",
+    kind=COMPUTE,
+    n=30,
+    expect_direct=False,
+)
+
+ILLUSTRATION_TASKS: tuple[Task, ...] = (I1_COMPUTE,)
+
+
+ALL_TASKS: tuple[Task, ...] = MEASUREMENT_TASKS + CONTROL_SET + ILLUSTRATION_TASKS
 
 TASKS: dict[str, Task] = {task.id: task for task in ALL_TASKS}

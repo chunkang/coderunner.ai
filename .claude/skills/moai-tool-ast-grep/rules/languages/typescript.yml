@@ -36,8 +36,8 @@ severity: info
 message: "Use nullish coalescing operator"
 rule:
   any:
-    - pattern: $VAR !== null && $VAR !== undefined ? $VAR : $DEFAULT
-    - pattern: $VAR != null ? $VAR : $DEFAULT
+    - pattern: "$VAR !== null && $VAR !== undefined ? $VAR : $DEFAULT"
+    - pattern: "$VAR != null ? $VAR : $DEFAULT"
 fix: $VAR ?? $DEFAULT
 
 ---

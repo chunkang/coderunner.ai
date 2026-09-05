@@ -311,6 +311,35 @@ A user who has never run `--set-secret` gets no line at all. That is a state, no
 
 ---
 
+## Continuous integration
+
+**Two workflows run against this repository, and neither of them can stop a merge.** `main` carries no branch protection rule — checked 2026-09-04, `gh api repos/:owner/:repo/branches/main/protection` returns `404 Branch not protected` — so every gate below is **advisory**: it reports, and a red tick blocks nothing. Enabling protection is the step that turns these from a signal someone has to read into one that reads itself, and it has not been taken.
+
+### `CI` — `.github/workflows/ci.yml`
+
+Runs on pushes to `main`, pull requests targeting `main`, and manual dispatch. Two jobs that answer different questions, and therefore do not `needs:` each other: `test` asks whether the code works, `image` asks whether it builds, imports, and matches the tree. They run in parallel and report separate verdicts.
+
+**`test (python 3.11)`** does four things, in order:
+
+- **A preflight asserting five imports** — `rich`, `ollama`, `httpx`, `pymilvus`, `milvus_lite`. It exists because the suite's response to a missing dependency is to *skip* (`conftest.py:153`), so without this step the most likely true positive arrives as a green tick and a quietly smaller test count.
+- **`ruff check .`**, and only that. The formatter is deliberately absent: it currently reports 8 files would be reformatted, and adding it would force a formatting decision this project has declined, through a change nominally about CI. `ruff` is pinned **exactly** at `0.16.1` rather than to a floor, so that "zero findings" means the same thing next week and an upstream release cannot turn a commit-free Tuesday red.
+- **`pytest`, with no arguments.** No threshold is restated in the YAML. The per-file coverage floors live at `conftest.py:204-212` and are enforced by a `pytest_sessionfinish` hook; the workflow's entire relationship with coverage is running the suite and honouring its exit status. A second copy in YAML would be the copy that drifts, because it is the copy nobody re-reads.
+- **A pass-count and skip-count assertion.** `MIN_PASSED = 613` (`ci.yml:362`) is a floor rather than an equality — adding tests must not fail the build — and the run must record **zero** skips. This catches what a coverage gate cannot see: tests that stopped being *collected*. The number is taken from a real `junitxml` run, never computed from an expected delta, because arithmetic cannot observe a test that vanished.
+
+**`image (build, import smoke, source integrity)`** builds `coderunner-ai:latest` with `push: false`, imports `main` inside the resulting image, then hash-compares the eight modules the `Dockerfile` ships — `main.py`, `tools.py`, `memory.py`, `recall.py`, `vectorstore.py`, `params.py`, `settings.py`, `keychain.py` (`Dockerfile:43`, `ci.yml:522`) — against the checked-out tree. An **absent** module fails the build loudly; a **stale** one builds, imports, and passes every other check, which is the hazard this job exists for. That hazard is not hypothetical: `keychain.py` was added to the `Dockerfile` and not to the workflow's list, one day after a comment in that workflow warned it could happen. `tests/test_source_seam.py` now asserts **set equality** between the two lists and reports the symmetric difference by side, so a ninth file cannot be added to one and forgotten in the other.
+
+Neither job invokes `./coderunner`, `./coderunner --doctor`, `docker compose up`, or pulls a model. `--doctor` sits after the entire bootstrap, so on a clean runner it would install Docker, build the image, start the Ollama sidecar and pull multiple gigabytes before printing one diagnostic line. Both jobs run with `contents: read` and write nothing — no push, no tag, no secret.
+
+### `Dependency canary` — `.github/workflows/canary.yml`
+
+Weekly, Mondays at 06:17 UTC, plus manual dispatch. It resolves every dependency from scratch (`--upgrade --no-cache-dir`, and deliberately **no** `cache:` key on `setup-python`, since a cache hit here would confirm at length that nothing has changed since the last time nothing changed), records what resolved into the job summary, then runs the same preflight and the same suite.
+
+It exists to find **the failure that no commit caused.** `requirements.txt` pins floors, not versions, and the widest of them is not first-party: `pymilvus` requires `milvus-lite>=2.4.0` while what actually resolves is `3.1.1` — a whole major version of unpinned range, beneath which sit `faiss-cpu`, `grpcio`, `numpy` and `pyarrow`. The version table is written under `always()`, so a red canary still tells you *which* versions were red; an unattributable failure is what gets a scheduled job muted, and then deleted.
+
+It pins nothing, by design — a canary that pins is a canary that cannot sing. One caveat is recorded in that workflow's header and is **not yet discharged**: the baseline versions were reproduced on aarch64/macOS while the job runs on x86_64 Linux, and platform-tag availability is precisely the axis along which resolution legitimately differs. Until the first scheduled run's own summary replaces that list, treat a delta against it as a platform difference to be understood, not as drift to be reported.
+
+---
+
 ## Files
 
 | File | Purpose |

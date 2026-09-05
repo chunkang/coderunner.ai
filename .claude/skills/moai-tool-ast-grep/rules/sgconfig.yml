@@ -6,8 +6,12 @@ ruleDirs:
   - quality
   - languages
 
-testConfigs:
-  - ./**/__tests__/*.yml
+# ast-grep expects a list of TestConfig STRUCTS here, not a list of globs. A bare
+# string is rejected at config load with "invalid type: string ... expected
+# struct TestConfig", which aborts the whole scan before a single file is read —
+# so every rule below was unreachable. Verified against ast-grep 0.45.3,
+# 2026-08-31. There is no __tests__ directory in this skill, so the key is
+# removed rather than given a struct that would point at nothing.
 
 languageGlobs:
   python:
