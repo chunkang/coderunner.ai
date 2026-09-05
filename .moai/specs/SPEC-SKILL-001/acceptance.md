@@ -8,17 +8,18 @@
 
 ### Scenario 1: a round trip's real cost is recorded
 
-**Given** a turn that completes one model round trip against a server reporting
-`prompt_eval_count` and `eval_count`,
+**Given** a turn that completes one model round trip against a server reporting its six fields,
 **When** the round trip ends,
-**Then** both counts are recorded for that round trip, attributed to their source per `spec.md` U1,
-**And** no figure in the record is derived from a character, byte or word count.
+**Then** `prompt_eval_count`, `eval_count`, `total_duration`, `load_duration`,
+`prompt_eval_duration` and `eval_duration` are all recorded for that round trip, attributed to their
+source per `spec.md` U1,
+**And** no figure is derived from a character count or from a client-side timer.
 
 ### Scenario 2: absent counts are recorded as absent
 
-**Given** a server or client that reports no token counts on the final chunk,
+**Given** a server or client that reports no counts, or no durations, on the final chunk,
 **When** the turn ends,
-**Then** the turn is recorded as **unmeasured**,
+**Then** the turn is recorded as **unmeasured in that dimension**,
 **And** it contributes to no rate or average,
 **And** no estimate is substituted (`spec.md` S1, N2).
 
@@ -77,15 +78,53 @@ The cheap fix is unavailable in retrospect.*
    without the model that produced it is not a measurement (`SPEC-MODEL-001` U3).
 6. The baseline carries the **per-source breakdown** `spec.md` U1 requires, because that breakdown —
    not a preference — is what selects between T3, T4 and T5 (`plan.md` R2).
-7. `prompt_eval_count` and `total_duration` are recorded in the same row, and any claim states
-   which it rests on (`plan.md` R1). **A token saving that does not move wall-clock is a
-   context-budget saving and must be labelled as one.**
+7. Cost and latency are recorded in the same row and pre-registered **separately**, because since
+   v1.1.0 the SPEC promises both and a target met in one and missed in the other is a likely
+   outcome (`plan.md` R1). **No claim in one dimension may imply the other** (`spec.md` U4).
+
+---
+
+## AC-LATENCY — reuse is faster, and the comparison is honest
+
+*Added at v1.1.0. The author's instruction was that a reused skill should **work faster**, and speed
+is a different claim from cost with a different way of going wrong.*
+
+### Scenario 6: a removed round trip is attributable
+
+**Given** a turn in which the grounded-answer pass is skipped (T4),
+**When** its latency is compared against the same turn shape today,
+**Then** the record shows the skip itself (`spec.md` E4),
+**And** the improvement is attributed to a removed `total_duration` rather than inferred from a
+smaller total.
+
+### Scenario 7: model-load time is excluded
+
+**Given** a latency comparison between two runs,
+**When** the figures are published,
+**Then** `load_duration` is reported separately for each and excluded from the comparison,
+**And** no comparison is drawn between a cold run and a warm one (`spec.md` U5, N6).
+
+*This is the criterion, not the edge case. `load_duration` can dominate every other term on a cold
+container, so a warm-versus-cold comparison shows a large improvement that no change caused — and it
+would be reported in good faith. `tech.md` §6.4 records the same class of error for the vector store,
+where same-process search measures 133 ms and cold-container search 298 ms.*
+
+### Scenario 8: a cost saving that is not a speed saving is reported as such
+
+**Given** a change that reduces `prompt_eval_count` but does not materially reduce
+`prompt_eval_duration` — the cached-prefix case (`spec.md` §5 item 4),
+**When** the result is written up,
+**Then** it is reported as a **context-budget** saving,
+**And** it is **not** presented as, or alongside, a speed improvement.
+
+*`spec.md` U4 exists for this scenario. Under v1.0.0 this was a labelling rule; under v1.1.0 it is
+also an admission that the task under-delivered against what was asked for, and the record says so.*
 
 ---
 
 ## AC-SKILL — distillation shortens the block without removing its guards
 
-### Scenario 6: a skill is smaller than the record it renders
+### Scenario 9: a skill is smaller than the record it renders
 
 **Given** a stored `SolutionRecord` whose script approaches the 4,000-character cap
 (`memory.py:51`),
@@ -93,7 +132,7 @@ The cheap fix is unavailable in retrospect.*
 **Then** the rendered block is recorded alongside the size the full record would have had,
 **And** the saving is the difference between two observed values (`spec.md` E3).
 
-### Scenario 7: the guards survive distillation
+### Scenario 10: the guards survive distillation
 
 **Given** any skill rendering,
 **When** the block is inspected,
@@ -114,7 +153,7 @@ another SPEC's evidence.*
 
 ## AC-GROUND — no turn ends with less on screen than it does today
 
-### Scenario 8: skipping the grounded pass still answers the user
+### Scenario 11: skipping the grounded pass still answers the user
 
 **Given** a successful turn whose stdout is judged self-explanatory,
 **When** the grounded-answer round trip is skipped,
@@ -125,7 +164,7 @@ another SPEC's evidence.*
 answer "grounded in a value that was actually computed"; a token optimisation that quietly withdraws
 the promise is a regression with a benchmark attached.*
 
-### Scenario 9 (edge): stdout that is not self-explanatory
+### Scenario 12 (edge): stdout that is not self-explanatory
 
 **Given** a turn whose stdout is a bare number, an empty string, or a traceback fragment,
 **When** the skip is evaluated,
@@ -138,7 +177,7 @@ honest outcome may be "not shipped".*
 
 ## AC-HISTORY — bounding history must not break self-correction
 
-### Scenario 10: a two-attempt turn still recovers
+### Scenario 13: a two-attempt turn still recovers
 
 **Given** a turn whose first script fails and whose second attempt corrects it,
 **When** history bounding is active,
@@ -177,7 +216,7 @@ The gate is `spec.md` §3.5 and it is decidable on T2's and T3–T5's recorded n
 1. A new meter module exists, is stdlib-only by AST assertion, and is gated at **100 %** in both
    `pytest.ini` and `conftest.py`.
 2. AC-METER through AC-GATE have each been **observed** — not inferred from a green suite.
-3. **AC-METER Scenario 2 and AC-HISTORY Scenario 10 have each been observed FAILING at least once**,
+3. **AC-METER Scenario 2 and AC-HISTORY Scenario 13 have each been observed FAILING at least once**,
    deliberately, against a knowingly-broken implementation: a meter that estimates from characters
    for Scenario 2, and a window that drops the corrected failure for Scenario 10. Both are green
    under every other test in this repository, which is the whole reason they have criteria.
@@ -192,6 +231,11 @@ The gate is `spec.md` §3.5 and it is decidable on T2's and T3–T5's recorded n
    `SPEC-MEMORY-001` carries the amendment.**
 8. The illustration defect's token cost is reported **separately** (`spec.md` O2), so this SPEC and
    `SPEC-ILLUSTRATE-001` cannot both bank it.
-9. **S-b and S-c are recorded plainly if they occur.** A SPEC that measures its own preferred design
+9. **Every published latency figure excludes `load_duration` and states it separately**, and no
+   comparison spans a cold run and a warm one.
+10. **If cost and latency disagree, both are published.** The SPEC promises speed since v1.1.0; a
+    result that delivers only context budget is reported as that, in those words, rather than as a
+    partial success in the dimension that was asked for.
+11. **S-b and S-c are recorded plainly if they occur.** A SPEC that measures its own preferred design
    out of contention has done the measurement correctly, and this item exists so that outcome is
    written down rather than quietly reopened.

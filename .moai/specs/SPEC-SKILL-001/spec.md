@@ -1,6 +1,6 @@
 ---
 id: SPEC-SKILL-001
-version: "1.0.0"
+version: "1.1.0"
 status: "draft"
 created: "2026-09-05"
 updated: "2026-09-05"
@@ -9,6 +9,39 @@ priority: "MEDIUM"
 ---
 
 ## HISTORY
+
+### v1.1.0 (2026-09-05) — Reuse must be FASTER, not only cheaper
+
+Scope amendment on the author's instruction: *"the skill reused should work faster."*
+
+**v1.0.0 treated latency as a caveat and this entry promotes it to a goal.** The original text
+carried the tokens/wall-clock distinction only as a warning — `plan.md` R1 said a token saving might
+not move the clock, and `acceptance.md` item 7 required such a saving be labelled a context-budget
+saving rather than speed. That framing was correct and incomplete: it protected the SPEC from
+overclaiming and gave it no reason to optimise the thing the user actually wants.
+
+**The instrument already reaches.** *(Verified 2026-09-05 against the installed client's response
+type.)* Ollama reports **six** fields, not two: `prompt_eval_count` and `eval_count`, and alongside
+them `total_duration`, `load_duration`, `prompt_eval_duration` and `eval_duration`. The same final
+chunk carries both dimensions, so no second instrument is needed and §3.1's no-estimation rule
+extends to latency unchanged.
+
+**`load_duration` is why the decomposition matters rather than being tidy.** It is the model being
+loaded into memory, and **nothing in this SPEC can reduce it**. On a cold container it dominates
+every other term, so a before/after comparison that includes it measures whether the model happened
+to be warm — which is not an optimisation, and would read as one. `prompt_eval_duration` is the term
+a smaller prompt actually moves; `eval_duration` moves only by generating less; a skipped round trip
+removes an entire `total_duration`. §3.6 states which task is expected to move which.
+
+**This re-ranks Stage 1.** Under tokens alone, T3's distillation and T5's bounded history are the
+obvious targets. Under latency, **T4 — dropping the redundant second round trip — is the largest
+Stage 1 win**, because it removes a whole prompt evaluation rather than shortening one. The ranking
+is still decided by T2's measurement (`plan.md` R2) and not by this paragraph.
+
+**And it sharpens Stage 2 rather than changing its gate.** A replayed skill costs *zero* model
+tokens and *zero* model latency; that is the whole prize, and it makes the pull toward amending C2
+stronger. §3.5's gate and the security cost at §3.4 are unchanged, and are now the only thing
+standing between an attractive number and an executable poisoned record.
 
 ### v1.0.0 (2026-09-05) — Initial specification
 
@@ -98,10 +131,15 @@ store.
 
 ## 3. Design decisions
 
-### 3.1 D1 — The meter reads the server's counts, and never estimates
+### 3.1 D1 — The meter reads the server's own numbers, and never estimates
 
-**Recommendation.** Token accounting is derived from `prompt_eval_count` and `eval_count` on the
-final streamed chunk, and from nothing else.
+**Recommendation.** Both dimensions are derived from the final streamed chunk and from nothing else:
+**cost** from `prompt_eval_count` and `eval_count`, **latency** from `total_duration`,
+`load_duration`, `prompt_eval_duration` and `eval_duration`.
+
+**Why one instrument and not two.** They arrive on the same chunk. A separate wall-clock timer around
+the call would measure the client's rendering and the terminal's scroll as well as the server's work,
+and the difference between those two numbers is exactly the size of the claim this SPEC makes.
 
 **Why not a tokeniser.** Adding `tiktoken` would introduce a dependency whose vocabulary is not the
 one the server used, so its numbers would be a different model's approximation of this model's cost —
@@ -112,9 +150,10 @@ of consequence. `product.md` §5.5 records what it costs to assert a behaviour r
 `structure.md` §6 records what it costs to leave a stale document standing. An estimated figure
 presented in a table beside measured ones is indistinguishable from data on a second reading.
 
-**What happens when the counts are absent.** Some servers and some client versions may omit them.
-**A turn whose counts are absent is recorded as unmeasured** (§4, S1) and contributes to no rate. It
-is never back-filled from character counts.
+**What happens when the numbers are absent.** Some servers and some client versions may omit them.
+**A turn whose counts or durations are absent is recorded as unmeasured** (§4, S1) and contributes to
+no rate. Cost is never back-filled from character counts, and latency is never back-filled from a
+client-side timer.
 
 ### 3.2 D2 — A skill is a *rendering*, not a second store
 
@@ -185,6 +224,32 @@ Three outcomes, all admitted in advance and none a failure of the SPEC:
 **S-b and S-c are real outcomes.** Following `SPEC-ILLUSTRATE-001` §3.5: a SPEC that measures its own
 preferred design out of contention has done the measurement correctly.
 
+### 3.6 D6 — Which task moves which term, stated before any of them is built
+
+**Recommendation.** Every task declares, in advance, the term it expects to move. A task whose
+measured effect lands on a different term than predicted is a finding to write down, not a number to
+present.
+
+| Term | What it is | What can move it |
+|---|---|---|
+| `load_duration` | The model being loaded into memory | **Nothing in this SPEC.** It must be reported and excluded from every comparison |
+| `prompt_eval_duration` | Evaluating the prompt that was sent | T3 (a shorter skill block), T5 (a bounded history) |
+| `eval_duration` | Generating the completion | Only generating less; no task here targets it directly |
+| `total_duration`, whole round trip | All of the above for one call | **T4** removes one entirely; Stage 2 removes both |
+
+**Why this table is a design decision and not a note.** Without it, a warm-cache run compared against
+a cold one shows a large improvement that no change caused, and it would be reported in good faith.
+`load_duration` is the term that produces that error, and it is reported separately for exactly that
+reason.
+
+**One property of the server defeats the naive reading of `prompt_eval_duration`.** Ollama reuses a
+cached prompt prefix across calls within a session, so shortening a prompt whose prefix was already
+cached can reduce `prompt_eval_count` while barely moving `prompt_eval_duration` — a real saving in
+context budget that is not a saving in time. §5 item 5 records this as unknown until measured, and
+`plan.md` R1 is the risk that names it.
+
+---
+
 ---
 
 ## 4. Requirements (EARS)
@@ -196,20 +261,23 @@ preferred design out of contention has done the measurement correctly.
 | **U1** | The system **shall** attribute every counted token to exactly one source: system prompt, conversation history, recall or skill block, feedback injection, or completion. |
 | **U2** | The meter **shall** be a first-party module holding no third-party import, gated at **100 %** in **both** `pytest.ini`'s `--cov` list **and** `conftest.py`'s `PER_FILE_COVERAGE_TARGETS` (`conftest.py:205`). |
 | **U3** | Every reduction figure this SPEC publishes **shall** cite the run that produced it and the baseline it is measured against. |
+| **U4** | Every claim of improvement **shall** state which dimension it is in — **cost** (tokens) or **latency** (wall-clock) — and **shall not** imply the other. A saving in one is not evidence of a saving in the other (§3.6). |
+| **U5** | Every latency comparison **shall** report `load_duration` separately and **shall** exclude it, because no task in this SPEC can reduce it and including it measures whether the model happened to be warm. |
 
 ### Event-driven
 
 | | Requirement |
 |---|---|
-| **E1** | **WHEN** a model round trip completes, **THEN** the system **shall** record the `prompt_eval_count` and `eval_count` reported by the server for that round trip. |
+| **E1** | **WHEN** a model round trip completes, **THEN** the system **shall** record the `prompt_eval_count`, `eval_count`, `total_duration`, `load_duration`, `prompt_eval_duration` and `eval_duration` the server reported for it. |
 | **E2** | **WHEN** a turn ends, **THEN** the system **shall** record its total cost and the per-source breakdown required by U1. |
 | **E3** | **WHEN** a skill block is injected in place of a full record, **THEN** the system **shall** record both the rendered size and the size the full record would have had, so the saving is a difference between two observed values rather than a claim. |
+| **E4** | **WHEN** a round trip is skipped, **THEN** the system **shall** record the skip, so a latency improvement is attributable to a removed call rather than inferred from a smaller total. |
 
 ### State-driven
 
 | | Requirement |
 |---|---|
-| **S1** | **IF** the server reports no token counts for a round trip, **THEN** the turn **shall** be recorded as **unmeasured** and **shall not** contribute to any rate, and no estimate **shall** be substituted. |
+| **S1** | **IF** the server reports no counts or no durations for a round trip, **THEN** the turn **shall** be recorded as **unmeasured** in that dimension and **shall not** contribute to any rate in it, and no estimate **shall** be substituted. |
 | **S2** | **IF** the meter raises for any reason, **THEN** the turn **shall** proceed exactly as it does today, with at most one status line — the degradation contract solution memory already meets (`product.md` §4 feature 20). |
 
 ### Optional
@@ -224,7 +292,8 @@ preferred design out of contention has done the measurement correctly.
 | | Requirement |
 |---|---|
 | **N1** | The system **shall not** replay stored code or skip the model at Stage 1. C2 holds until it is amended, and it is amended by an amendment, not by this SPEC's implementation. |
-| **N2** | The meter **shall not** estimate a token count from characters, bytes, or word counts, under any circumstance, including when the server omits its counts. |
+| **N2** | The meter **shall not** estimate a token count from characters, bytes or word counts, nor a latency from a client-side timer, under any circumstance, including when the server omits its numbers. |
+| **N6** | A latency figure **shall not** be presented without `load_duration` stated, and a comparison **shall not** be drawn between a cold run and a warm one. |
 | **N3** | Distillation **shall not** remove the `adapt or ignore` framing or the `Authored by:` line. Both were specified by measurements this SPEC did not take. |
 | **N4** | This SPEC **shall not** modify `SPEC-MEMORY-001`'s collection schema, `memory.py`'s truncation caps, or the `0.65` similarity floor. Those are measured values belonging to another SPEC. |
 | **N5** | No existing cell in `probe/tasks.py` **shall** be renamed, re-worded, re-sized or removed, and no existing record file **shall** be rewritten. |
@@ -244,7 +313,13 @@ Written now, so that it is not written later by whoever wants the result to mean
    that the Seoul→Busan pair scores 0.76 and unrelated pairs 0.30–0.40, which establishes that the
    floor separates *related* from *unrelated* — not that a related record is *correct* for the new
    task. Those are different questions and this corpus cannot tell them apart.
-4. **Whether the model's own token accounting is stable across model tags.** `SPEC-MODEL-001`
+4. **Whether a shorter prompt is a faster prompt.** Ollama reuses a cached prompt prefix within a
+   session, so shortening a prompt whose prefix was already cached may reduce `prompt_eval_count`
+   while barely moving `prompt_eval_duration`. **The two dimensions can disagree, and this SPEC does
+   not know by how much until T2 measures it.** If they disagree sharply, T4 and Stage 2 — which
+   remove whole calls rather than shortening them — are the only tasks that deliver what was asked
+   for, and T3 and T5 deliver context budget instead. That is a finding, not a failure.
+5. **Whether the model's own token accounting is stable across model tags.** `SPEC-MODEL-001`
    measured Phi-3.5 at a 131,072 context against llama3.1:8b's; a baseline taken under one and
    quoted under the other is not a comparison.
 
