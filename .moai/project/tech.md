@@ -722,21 +722,45 @@ configuration file in the repository.
 isort configuration and no such dependency declared. Nothing would have caught
 the unused `Spinner` import at `main.py:42`.
 
-### 8.3 No CI
+### 8.3 CI — **RESOLVED**, and advisory
 
-`.github/` does not exist. There is no pipeline that builds the image, runs a
-`--doctor`-style smoke test, or verifies that `main.py` even imports. Combined
-with the build-only-if-absent guard at `coderunner:163`, a source edit can ship
-nothing and fail nowhere.
+*Kept rather than deleted, following `product.md` §6.2: the gap was real, and
+what closed it is best read against what it closed.*
 
-**This gap widened rather than narrowed at SPEC-MEMORY-001.** The repository
-gained a substantial test suite and a per-file coverage gate (§1.1), and nothing
-runs either of them automatically. The suite is also awkward to run outside the
-image — `pytest.ini`'s header documents the supported invocation as a bind mount
-of the repository over `/work` inside `coderunner-ai:latest`, because the image
-carries `rich`/`ollama`/`httpx`/`pymilvus` but deliberately never carries
-`tests/`. A gate that exists, passes locally, and is never executed by anything
-but a human is one commit away from being decorative.
+The original entry read "`.github/` does not exist", and it was accurate when
+written. SPEC-CI-001 added two workflows.
+
+`.github/workflows/ci.yml` runs on pushes to `main`, pull requests targeting
+`main`, and manual dispatch, in two jobs that deliberately do not `needs:` each
+other. `test` installs runtime and test dependencies, asserts five imports in a
+preflight — `rich`, `ollama`, `httpx`, `pymilvus`, `milvus_lite` — because the
+suite's answer to a missing dependency is to *skip* (`conftest.py:153`), runs
+`ruff check .` against an exactly-pinned `ruff==0.16.1`, runs `pytest` with no
+arguments so the per-file floors at `conftest.py:204-212` remain the only copy
+of those numbers, then asserts a pass floor of `MIN_PASSED = 613`
+(`ci.yml:362`) with zero skips. `image` builds `coderunner-ai:latest` with
+`push: false`, imports `main` inside it, and hash-compares the eight modules on
+`Dockerfile:43` against the checked-out tree. `.github/workflows/canary.yml`
+re-resolves every dependency weekly with `--upgrade --no-cache-dir` and no
+cache, and runs the same suite against whatever that produces.
+
+**The gap named above is the one that closed.** The coverage gate that was
+"never executed by anything but a human" now runs on every push and every pull
+request, and the pass floor catches what a coverage gate structurally cannot
+see: a test that stopped being *collected*.
+
+**What has not changed is whether any of it can stop a merge.** `main` carries
+no branch protection rule — verified 2026-09-04, the protection endpoint
+returns `404 Branch not protected` — so every check above reports and none of
+them blocks. Until protection is enabled these are gates in the sense that they
+go red, not in the sense that they hold anything back; SPEC-CI-001's T10 owns
+that step and it has not been taken.
+
+The suite remains awkward to run *inside* the image — `pytest.ini`'s header
+documents the supported invocation as a bind mount of the repository over
+`/work` inside `coderunner-ai:latest`, because the image carries
+`rich`/`ollama`/`httpx`/`pymilvus` but deliberately never carries `tests/`. CI
+sidesteps this rather than solving it, by installing dependencies on the runner.
 
 ### 8.4 No packaging metadata
 
