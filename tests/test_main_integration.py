@@ -49,8 +49,15 @@ class FakeClient:
         responses: Sequence[str],
         embedding: Sequence[float] | None = None,
         embed_raises: BaseException | None = None,
+        final_meta: dict | None = None,
     ) -> None:
         self.responses = list(responses)
+        # None means "emit exactly what this fake always emitted": one chunk
+        # carrying content and no metadata. Every test written before
+        # SPEC-SKILL-001 T2 therefore drives an UNMEASURED turn, which is the
+        # correct behaviour for a server that reports no counts and is asserted
+        # as such below.
+        self.final_meta = final_meta
         self.embedding = list(embedding) if embedding is not None else [1.0, 0.0]
         self.embed_raises = embed_raises
         self.chat_calls: list[list[dict]] = []
@@ -64,7 +71,10 @@ class FakeClient:
         # later mutations rewrite what we recorded.
         self.chat_calls.append([dict(message) for message in (messages or [])])
         text = self.responses.pop(0) if self.responses else "Answer: done"
-        return iter([{"message": {"content": text}}])
+        chunks: list[dict] = [{"message": {"content": text}}]
+        if self.final_meta is not None:
+            chunks.append(dict(self.final_meta))
+        return iter(chunks)
 
     # `input` mirrors ollama's embed() signature; renaming it here would stop
     # this fake standing in for the real client.
@@ -2261,3 +2271,129 @@ def test_show_banner_actually_honours_the_clear_decision(monkeypatch) -> None:
     monkeypatch.delenv("CODERUNNER_LAUNCH_WARNED", raising=False)
     main.show_banner()
     assert calls == [1], "show_banner did not clear when it was safe to"
+
+
+# ------------------------------------------------------------------------------
+# The meter's wiring  (SPEC-SKILL-001 T2-b)
+# ------------------------------------------------------------------------------
+# T1 built the instrument and deliberately did not connect it. These are the
+# tests that connect it, and the one that matters most is the FIRST: a server
+# that reports no counts must produce an UNMEASURED turn, not a zero-cost one.
+
+
+SERVER_META = {
+    "prompt_eval_count": 1200,
+    "eval_count": 340,
+    "total_duration": 5_000_000_000,
+    "load_duration": 1_500_000_000,
+    "prompt_eval_duration": 2_000_000_000,
+    "eval_duration": 1_400_000_000,
+    "done": True,
+}
+
+
+def test_a_turn_against_a_server_reporting_nothing_is_unmeasured(
+    tmp_store: VectorStore, conv: main.Conversation
+) -> None:
+    """spec.md S1, through the whole turn rather than against the unit.
+
+    This is the shape every test written before T2 already drives, and it must
+    stay a perfectly ordinary turn: the meter records the gap and fills nothing.
+    """
+    import meter as meter_mod
+
+    session_meter = meter_mod.Meter()
+    client = FakeClient([CODE_REPLY, ANSWER_REPLY])
+
+    main.agentic_turn(client, conv, "compute the answer", tmp_store, None, session_meter)
+
+    assert session_meter.measured_round_trips == 0
+    assert session_meter.unmeasured_round_trips == 2
+    assert session_meter.total_prompt_tokens == 0
+    assert session_meter.is_empty is False
+
+
+def test_a_turn_records_both_round_trips_under_their_own_purposes(
+    tmp_store: VectorStore, conv: main.Conversation
+) -> None:
+    """T4's question is what the GROUNDED pass costs, so it is recorded apart."""
+    import meter as meter_mod
+
+    session_meter = meter_mod.Meter()
+    client = FakeClient([CODE_REPLY, ANSWER_REPLY], final_meta=SERVER_META)
+
+    main.agentic_turn(client, conv, "compute the answer", tmp_store, None, session_meter)
+
+    assert [t.purpose for t in session_meter.round_trips] == ["code", "grounded"]
+    assert session_meter.measured_round_trips == 2
+    assert session_meter.prompt_tokens_by_purpose() == {"code": 1200, "grounded": 1200}
+    assert session_meter.total_completion_tokens == 680
+
+
+def test_the_receipt_is_read_after_the_stream_is_drained(
+    tmp_store: VectorStore, conv: main.Conversation
+) -> None:
+    """The wiring's sharpest edge, asserted rather than trusted.
+
+    The metadata rides on the FINAL chunk, so a record() taken before
+    render_stream has consumed the generator would see a chunk with no counts on
+    it — an unmeasured turn caused by our own wiring rather than by the server,
+    and indistinguishable from the real thing at §3.1.
+    """
+    import meter as meter_mod
+
+    session_meter = meter_mod.Meter()
+    client = FakeClient([CODE_REPLY, ANSWER_REPLY], final_meta=SERVER_META)
+
+    main.agentic_turn(client, conv, "compute the answer", tmp_store, None, session_meter)
+
+    for trip in session_meter.round_trips:
+        assert trip.measured is True, "a receipt was read before its stream was drained"
+        assert trip.timed is True
+        assert trip.load_duration == 1_500_000_000
+
+
+def test_a_direct_protocol_turn_records_only_the_code_pass(
+    tmp_store: VectorStore, conv: main.Conversation
+) -> None:
+    """No fenced block means no execution and no grounded pass — and one record."""
+    import meter as meter_mod
+
+    session_meter = meter_mod.Meter()
+    client = FakeClient(["Answer: a closure captures its enclosing scope."], final_meta=SERVER_META)
+
+    main.agentic_turn(client, conv, "explain closures", tmp_store, None, session_meter)
+
+    assert [t.purpose for t in session_meter.round_trips] == ["code"]
+
+
+def test_component_sizes_are_recorded_for_the_request_that_was_sent(
+    tmp_store: VectorStore, conv: main.Conversation
+) -> None:
+    """spec.md U6, and plan.md R2's ranking.
+
+    The system prompt is real here, so `system` is its true length rather than a
+    fixture's — the point of recording sizes at the call site instead of over a
+    reconstruction.
+    """
+    import meter as meter_mod
+
+    session_meter = meter_mod.Meter()
+    client = FakeClient([CODE_REPLY, ANSWER_REPLY], final_meta=SERVER_META)
+
+    main.agentic_turn(client, conv, "compute the answer", tmp_store, None, session_meter)
+
+    (code_sizes, _grounded) = session_meter.size_records
+    assert code_sizes.unit == "characters"
+    assert code_sizes.sizes["system"] == len(main.SYSTEM_PROMPT)
+    assert code_sizes.sizes["history"] > 0
+    assert session_meter.largest_component() in {"system", "history"}
+
+
+def test_a_turn_without_a_meter_behaves_exactly_as_before(
+    tmp_store: VectorStore, conv: main.Conversation
+) -> None:
+    """The parameter is optional; an unmetered turn is an ordinary turn."""
+    client = FakeClient([CODE_REPLY, ANSWER_REPLY])
+    main.agentic_turn(client, conv, "compute the answer", tmp_store)
+    assert tmp_store.count() == 1
