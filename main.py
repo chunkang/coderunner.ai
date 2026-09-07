@@ -47,6 +47,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 
 import keychain
+import meter
 import params
 import settings
 from memory import (
@@ -206,16 +207,33 @@ class Conversation:
 # ------------------------------------------------------------------------------
 
 
-def stream_llm(client: ollama.Client, messages: list[dict]) -> Iterator[str]:
+def stream_llm(
+    client: ollama.Client,
+    messages: list[dict],
+    receipt: meter.Receipt | None = None,
+) -> Iterator[str]:
     """Stream one completion for an explicit message list.
 
     Takes the messages rather than the Conversation so that a caller can send a
     per-request list — specifically one carrying an ephemeral recall block —
     without mutating `Conversation.messages`. It also makes this function
-    testable with a fake client, which it has never been.
+    testable with a fake client, which SPEC-SKILL-001 T1 finally did.
+
+    **`receipt` is how the server's own numbers escape a generator.** Ollama puts
+    `prompt_eval_count`, `eval_count` and the four duration fields on the FINAL
+    chunk, and this function yields strings through `prime_stream()` — so there
+    is no return value they could travel on. The caller owns a `meter.Receipt`,
+    hands it in, and reads it once the stream is drained. Every chunk is offered
+    to it and the last one wins, because only the last one carries metadata.
+
+    The parameter is optional and defaults to None so that every existing caller,
+    and every test written before T1, keeps working unchanged. A turn with no
+    receipt is simply a turn nobody measured.
     """
     stream = client.chat(model=MODEL_NAME, messages=messages, stream=True)
     for chunk in stream:
+        if receipt is not None:
+            receipt.set(chunk)
         piece = chunk.get("message", {}).get("content", "")
         if piece:
             yield piece

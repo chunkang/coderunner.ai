@@ -40,7 +40,7 @@ RUN pip install -r requirements.txt
 # this line for exactly that long. tests/test_source_seam.py derives the
 # required list from main.py's own import block, so the next module added to the
 # application fails a test instead of shipping missing.
-COPY main.py tools.py memory.py recall.py vectorstore.py params.py settings.py keychain.py ./
+COPY main.py tools.py memory.py recall.py vectorstore.py params.py settings.py keychain.py meter.py ./
 
 # The `.coderunner` directory MUST exist in the image AND be owned by `runner`
 # BEFORE `USER runner`. Docker copies an image directory's ownership into an

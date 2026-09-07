@@ -327,8 +327,12 @@ jobs:
         #    +4 SPEC-ILLUSTRATE-001 T1 tests/test_probe.py — the compute cell's
         #        shape, its operands, its exclusion from SPEC-PROMPT-001's two
         #        sets, and an N7 regression pin on all eight existing cells
+        #   +28 SPEC-SKILL-001 T1 tests/test_meter.py — the meter: six server
+        #        fields recorded, absent counts recorded as ABSENT, the bool
+        #        type guard, character sizes kept apart from token counts,
+        #        and stream_llm exercised against a fake client at last
         #   ---
-        #   617
+        #   645
         #
         # MEASURED, NOT COMPUTED. The arithmetic above records where the number
         # came from; the number itself was taken from the `tests` attribute of a
@@ -336,8 +340,8 @@ jobs:
         # derived by adding an expected delta cannot see a test that stopped
         # being COLLECTED, which is the whole thing this gate exists to catch.
         #
-        # 617 measured on the HOST 2026-09-04, Python 3.11.14, from
-        # `pytest --junitxml`: tests=617 failures=0 errors=0 skipped=0.
+        # 645 measured on the HOST 2026-09-06, Python 3.11.14, from
+        # `pytest --junitxml`: tests=645 failures=0 errors=0 skipped=0.
         # Superseded, and kept because a superseded measurement is still one:
         # 613 measured on the HOST 2026-08-28, same interpreter, same way.
         #
@@ -364,7 +368,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 617
+          MIN_PASSED = 645
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):
@@ -486,7 +490,7 @@ jobs:
         # was not enough.
         run: |
           docker run --rm --entrypoint python coderunner-ai:latest \
-            -c "import main, memory, recall, vectorstore, tools, params, settings, keychain; print('import smoke ok')"
+            -c "import main, memory, recall, vectorstore, tools, params, settings, keychain, meter; print('import smoke ok')"
 
       - name: Source integrity — the image must carry the checked-out tree
         # WHY A BUILD PLUS AN IMPORT SMOKE IS NOT ENOUGH.
@@ -524,7 +528,7 @@ jobs:
           # and settings.py and was concealed only because the local image was
           # stale. A module copied but missing HERE is worse, because it fails
           # nothing: an absent file breaks the build, a STALE one passes.
-          FILES="main.py tools.py memory.py recall.py vectorstore.py params.py settings.py keychain.py"
+          FILES="main.py tools.py memory.py recall.py vectorstore.py params.py settings.py keychain.py meter.py"
 
           # Scratch files go to a temp dir, not the working tree. On the runner
           # this is cosmetic; for the human running this step by hand against a

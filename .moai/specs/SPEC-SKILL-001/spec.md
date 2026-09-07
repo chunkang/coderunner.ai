@@ -1,6 +1,6 @@
 ---
 id: SPEC-SKILL-001
-version: "1.1.0"
+version: "1.1.1"
 status: "draft"
 created: "2026-09-05"
 updated: "2026-09-05"
@@ -9,6 +9,33 @@ priority: "MEDIUM"
 ---
 
 ## HISTORY
+
+### v1.1.1 (2026-09-06) — U1 asked the instrument for something it cannot give
+
+**Found while planning T1, before a line of it was written, which is the only cheap time to find
+it.** v1.1.0's **U1** required the meter to *"attribute every counted token to exactly one source:
+system prompt, conversation history, recall or skill block, feedback injection, or completion."*
+**That is not obtainable.**
+
+*(Verified 2026-09-06 against the installed client.)* `BaseGenerateResponse` carries a **single**
+`prompt_eval_count` for the whole prompt and no per-message breakdown, and `ollama.Client` exposes
+`chat`, `generate`, `embed`, `show`, `list`, `ps`, `pull`, `push`, `copy`, `delete` and the web
+helpers — **no tokenize endpoint**. Decomposing that one number across five sources therefore needs
+a tokeniser, and **N2** forbids exactly that, for the reason §3.1 gives: a tokeniser's vocabulary is
+not the server's, so its numbers would be a different model's approximation of this model's cost.
+
+**U1 and N2 contradicted each other, and U1 is the one that was wrong.** It was written as an
+attribution rule without checking that the instrument could attribute.
+
+**The fix splits the claim along the line that already exists in the SPEC — measured versus
+observed.** Cost stays exactly measured, per round trip, from the server's own counts. Attribution
+becomes a record of each component's **size in characters**, labelled a size and never called a
+token count. No character count is presented as tokens anywhere, so N2 stands untouched.
+
+**It is enough for the only job attribution had.** `plan.md` R2 needs to know *which component
+dominates the prompt*, so that T3, T4 and T5 are ranked by the measurement rather than by whoever
+implemented first. A share of characters ranks them. It does not need to be a token count to do
+that, and calling it one would be the failure this SPEC exists to avoid.
 
 ### v1.1.0 (2026-09-05) — Reuse must be FASTER, not only cheaper
 
@@ -258,7 +285,8 @@ context budget that is not a saving in time. §5 item 5 records this as unknown 
 
 | | Requirement |
 |---|---|
-| **U1** | The system **shall** attribute every counted token to exactly one source: system prompt, conversation history, recall or skill block, feedback injection, or completion. |
+| **U1** | The system **shall** attribute each **round trip** to its purpose — the code pass or the grounded-answer pass — and record the server's counts against it. Per-message token attribution is **not** required and is not obtainable (v1.1.1). |
+| **U6** | The system **shall** record the **size in characters** of each prompt component — system prompt, conversation history, recall or skill block, feedback injection — and **shall** label every such figure a size. A size **shall not** be presented as, converted to, or described as a token count. |
 | **U2** | The meter **shall** be a first-party module holding no third-party import, gated at **100 %** in **both** `pytest.ini`'s `--cov` list **and** `conftest.py`'s `PER_FILE_COVERAGE_TARGETS` (`conftest.py:205`). |
 | **U3** | Every reduction figure this SPEC publishes **shall** cite the run that produced it and the baseline it is measured against. |
 | **U4** | Every claim of improvement **shall** state which dimension it is in — **cost** (tokens) or **latency** (wall-clock) — and **shall not** imply the other. A saving in one is not evidence of a saving in the other (§3.6). |
@@ -269,7 +297,7 @@ context budget that is not a saving in time. §5 item 5 records this as unknown 
 | | Requirement |
 |---|---|
 | **E1** | **WHEN** a model round trip completes, **THEN** the system **shall** record the `prompt_eval_count`, `eval_count`, `total_duration`, `load_duration`, `prompt_eval_duration` and `eval_duration` the server reported for it. |
-| **E2** | **WHEN** a turn ends, **THEN** the system **shall** record its total cost and the per-source breakdown required by U1. |
+| **E2** | **WHEN** a turn ends, **THEN** the system **shall** record its total cost, its per-round-trip attribution (U1) and its per-component sizes (U6). |
 | **E3** | **WHEN** a skill block is injected in place of a full record, **THEN** the system **shall** record both the rendered size and the size the full record would have had, so the saving is a difference between two observed values rather than a claim. |
 | **E4** | **WHEN** a round trip is skipped, **THEN** the system **shall** record the skip, so a latency improvement is attributable to a removed call rather than inferred from a smaller total. |
 
