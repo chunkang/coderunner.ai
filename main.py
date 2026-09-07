@@ -1011,6 +1011,7 @@ def agentic_turn(
     user_input: str,
     store: VectorStore | None = None,
     param_session: settings.PolicySession | None = None,
+    session_meter: meter.Meter | None = None,
 ) -> None:
     conv.user(user_input)
 
@@ -1073,7 +1074,14 @@ def agentic_turn(
             f"Analyzing request and designing solution (attempt {attempt}/{MAX_RETRIES})…",
             "cyan",
         ):
-            thought_tokens = prime_stream(stream_llm(client, request_messages))
+            # The receipt is filled by stream_llm as chunks arrive and is only
+            # COMPLETE once the generator is drained, which render_stream below
+            # is what does. Recording before that point records a chunk with no
+            # metadata on it — an unmeasured turn caused by the meter's own
+            # wiring rather than by the server. Hence the record() call sits
+            # after render_stream, not here.
+            code_receipt = meter.Receipt()
+            thought_tokens = prime_stream(stream_llm(client, request_messages, code_receipt))
 
         thought = render_stream(
             title=f"Thought · attempt {attempt}",
@@ -1084,6 +1092,11 @@ def agentic_turn(
             # watched these lines being written.
             highlight_code=True,
         )
+        if session_meter is not None:
+            session_meter.record(purpose=meter.CODE, chunk=code_receipt.chunk)
+            session_meter.record_sizes(
+                purpose=meter.CODE, sizes=meter.component_sizes(request_messages)
+            )
         conv.assistant(thought)
 
         code = extract_last_python_block(thought)
@@ -1136,13 +1149,23 @@ def agentic_turn(
 
             with processing("💬", "LLaMA", "Final response streaming…", "magenta"):
                 # No recall block on the grounded pass: it only needs the stdout.
-                answer_tokens = prime_stream(stream_llm(client, conv.messages))
+                grounded_receipt = meter.Receipt()
+                answer_tokens = prime_stream(
+                    stream_llm(client, conv.messages, grounded_receipt)
+                )
 
             answer = render_stream(
                 title="Answer",
                 style="magenta",
                 token_iter=answer_tokens,
             )
+            if session_meter is not None:
+                # T4's question is what THIS pass costs, so it is recorded under
+                # its own purpose rather than folded into the turn's total.
+                session_meter.record(purpose=meter.GROUNDED, chunk=grounded_receipt.chunk)
+                session_meter.record_sizes(
+                    purpose=meter.GROUNDED, sizes=meter.component_sizes(conv.messages)
+                )
             conv.assistant(answer)
 
             # Capture last, after the answer has streamed, so the embed/write
@@ -1302,6 +1325,13 @@ def repl() -> None:
     # never asked and settings.json is never created for them (spec.md 4.5).
     param_session = settings.PolicySession()
 
+    # One meter for the whole session, so totals accumulate across turns the way
+    # a context window does. It records and reports nothing on its own: SPEC-
+    # SKILL-001 T1 built the instrument and T2 wires it, and the numbers are read
+    # by the T2 baseline run, not by the REPL. A turn where the server omits its
+    # counts is recorded as unmeasured and contributes to no total (spec.md S1).
+    session_meter = meter.Meter()
+
     while True:
         console.print(Rule(style="dim"))
         try:
@@ -1327,7 +1357,7 @@ def repl() -> None:
             continue
 
         try:
-            agentic_turn(client, conv, stripped, store, param_session)
+            agentic_turn(client, conv, stripped, store, param_session, session_meter)
         except ollama.ResponseError as err:
             status("❌", "LLaMA", f"API error: {err}", "red")
         except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as err:
