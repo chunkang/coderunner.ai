@@ -209,6 +209,7 @@ PER_FILE_COVERAGE_TARGETS = {
     "params.py": 100.0,
     "settings.py": 100.0,
     "keychain.py": 100.0,
+    "meter.py": 100.0,
 }
 
 

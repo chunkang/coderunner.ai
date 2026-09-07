@@ -11,8 +11,8 @@
 **Given** a turn that completes one model round trip against a server reporting its six fields,
 **When** the round trip ends,
 **Then** `prompt_eval_count`, `eval_count`, `total_duration`, `load_duration`,
-`prompt_eval_duration` and `eval_duration` are all recorded for that round trip, attributed to their
-source per `spec.md` U1,
+`prompt_eval_duration` and `eval_duration` are all recorded for that round trip, attributed to that
+round trip's purpose per `spec.md` U1,
 **And** no figure is derived from a character count or from a client-side timer.
 
 ### Scenario 2: absent counts are recorded as absent
@@ -76,8 +76,9 @@ The cheap fix is unavailable in retrospect.*
 
 5. Every recorded row carries the **server's own model readback**, not the configured tag. A rate
    without the model that produced it is not a measurement (`SPEC-MODEL-001` U3).
-6. The baseline carries the **per-source breakdown** `spec.md` U1 requires, because that breakdown —
-   not a preference — is what selects between T3, T4 and T5 (`plan.md` R2).
+6. The baseline carries the **per-component sizes** `spec.md` U6 requires, in characters and
+   labelled as sizes, because that ranking — not a preference — is what selects between T3, T4 and
+   T5 (`plan.md` R2). **No size is presented as a token count** (v1.1.1).
 7. Cost and latency are recorded in the same row and pre-registered **separately**, because since
    v1.1.0 the SPEC promises both and a target met in one and missed in the other is a likely
    outcome (`plan.md` R1). **No claim in one dimension may imply the other** (`spec.md` U4).
