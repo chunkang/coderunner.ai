@@ -85,6 +85,59 @@ def _read(chunk: Any, key: str) -> int | None:
     return value
 
 
+def component_sizes(messages: Any) -> dict[str, int]:
+    """Classify a request's messages and total each component's CHARACTERS.
+
+    Not tokens, and the distinction is the whole reason this function exists in
+    this form. Per-message token attribution is not obtainable -- the server
+    reports one prompt_eval_count for the whole prompt and exposes no tokenize
+    endpoint (spec.md v1.1.1) -- so the meter records the thing that IS
+    obtainable and labels it a size.
+
+    **Position discriminates, not wording.** The system prompt is seeded once
+    outside the turn loop, and `inject_recall()` returns a NEW list carrying the
+    recall block as a system message. A second system message therefore cannot
+    arrive by any other route, so classifying by position needs no knowledge of
+    the block's text and cannot drift when that text changes.
+
+    **Feedback injections are counted inside `history`, and that is a stated
+    limit rather than an oversight.** They enter as ordinary `user` messages
+    (main.py's `conv.user(feedback)`), so separating them would mean matching on
+    our own prompt wording -- coupling the meter to a string that T4 may well
+    rewrite. `history` is still the ranking plan.md R2 needs: if it dominates,
+    T5 is the task worth doing, and whether the bulk is dialogue or feedback is
+    a question T5 can ask with a sharper instrument.
+
+    Total by construction: anything unreadable contributes nothing rather than
+    raising, because the meter must never be the reason a turn fails (S2).
+    """
+    sizes: dict[str, int] = {}
+    seen_system = False
+    try:
+        iterator = iter(messages)
+    except TypeError:
+        return sizes
+    for message in iterator:
+        try:
+            role = message["role"]
+        except (TypeError, KeyError, IndexError):
+            role = None
+        try:
+            content = message["content"]
+        except (TypeError, KeyError, IndexError):
+            content = ""
+        size = len(content) if isinstance(content, str) else 0
+        if role == "system" and not seen_system:
+            seen_system = True
+            key = "system"
+        elif role == "system":
+            key = "skill"
+        else:
+            key = "history"
+        sizes[key] = sizes.get(key, 0) + size
+    return sizes
+
+
 @dataclass(frozen=True)
 class RoundTrip:
     """One model call, as the server described it.

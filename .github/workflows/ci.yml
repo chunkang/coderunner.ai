@@ -331,8 +331,13 @@ jobs:
         #        fields recorded, absent counts recorded as ABSENT, the bool
         #        type guard, character sizes kept apart from token counts,
         #        and stream_llm exercised against a fake client at last
+        #   +15 SPEC-SKILL-001 T2-b tests/test_meter.py + test_main_integration.py —
+        #        component_sizes as a gated pure function, and the wiring: both
+        #        round trips recorded under their own purposes, a countless
+        #        server producing an UNMEASURED turn, and the receipt proven to
+        #        be read only after render_stream drains the generator
         #   ---
-        #   645
+        #   660
         #
         # MEASURED, NOT COMPUTED. The arithmetic above records where the number
         # came from; the number itself was taken from the `tests` attribute of a
@@ -340,8 +345,8 @@ jobs:
         # derived by adding an expected delta cannot see a test that stopped
         # being COLLECTED, which is the whole thing this gate exists to catch.
         #
-        # 645 measured on the HOST 2026-09-06, Python 3.11.14, from
-        # `pytest --junitxml`: tests=645 failures=0 errors=0 skipped=0.
+        # 660 measured on the HOST 2026-09-07, Python 3.11.14, from
+        # `pytest --junitxml`: tests=660 failures=0 errors=0 skipped=0.
         # Superseded, and kept because a superseded measurement is still one:
         # 613 measured on the HOST 2026-08-28, same interpreter, same way.
         #
@@ -368,7 +373,7 @@ jobs:
           import sys
           import xml.etree.ElementTree as ET
 
-          MIN_PASSED = 645
+          MIN_PASSED = 660
 
           path = os.path.join(os.environ.get("RUNNER_TEMP") or ".", "pytest-results.xml")
           if not os.path.exists(path):

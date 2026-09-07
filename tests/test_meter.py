@@ -270,6 +270,94 @@ def test_the_dominant_component_of_nothing_is_nothing() -> None:
 
 
 # ------------------------------------------------------------------------------
+# 4.5 Classifying a message list into components (U6)
+# ------------------------------------------------------------------------------
+# Which component dominates the prompt is what selects between T3, T4 and T5
+# (plan.md R2). The classification is a pure function here rather than inline in
+# main.py so that it is gated at 100% like everything else in this module --
+# main.py is not in pytest.ini's --cov list, so logic placed there is logic
+# nobody's coverage gate is watching.
+
+
+def test_the_first_system_message_is_the_system_prompt() -> None:
+    sizes = meter_mod.component_sizes(
+        [
+            {"role": "system", "content": "S" * 4000},
+            {"role": "user", "content": "u" * 10},
+        ]
+    )
+    assert sizes["system"] == 4000
+    assert sizes["history"] == 10
+
+
+def test_a_later_system_message_is_the_skill_block() -> None:
+    """`inject_recall` returns a NEW list carrying the block as a system message.
+
+    It is the only way a second system message enters a request, so position is
+    a sound discriminator and does not depend on the block's wording.
+    """
+    sizes = meter_mod.component_sizes(
+        [
+            {"role": "system", "content": "S" * 4000},
+            {"role": "user", "content": "u" * 10},
+            {"role": "system", "content": "K" * 800},
+        ]
+    )
+    assert sizes == {"system": 4000, "history": 10, "skill": 800}
+
+
+def test_a_request_without_a_skill_block_reports_no_skill_component() -> None:
+    """Absent is absent here too -- not a zero that reads as a measured nothing."""
+    sizes = meter_mod.component_sizes(
+        [{"role": "system", "content": "S" * 100}, {"role": "user", "content": "u"}]
+    )
+    assert "skill" not in sizes
+
+
+def test_component_sizes_of_an_empty_request_are_empty() -> None:
+    assert meter_mod.component_sizes([]) == {}
+
+
+def test_component_sizes_tolerate_a_malformed_message() -> None:
+    """The meter must never be the reason a turn fails (spec.md S2)."""
+    sizes = meter_mod.component_sizes(
+        [{"role": "system"}, {"content": "x" * 5}, "not a mapping", None]
+    )
+    assert sizes["system"] == 0
+    assert sizes["history"] == 5
+
+
+@pytest.mark.parametrize("not_a_list", [None, 42, 3.5])
+def test_component_sizes_of_something_that_is_not_a_message_list(not_a_list: object) -> None:
+    """Total by construction, at the outermost boundary too (spec.md S2).
+
+    The per-message guards below cover a bad ITEM. This covers a bad ARGUMENT --
+    the shape a future caller passing the wrong thing would produce. The meter
+    returns nothing rather than raising, because it must never be the reason a
+    turn fails.
+    """
+    assert meter_mod.component_sizes(not_a_list) == {}
+
+
+def test_component_sizes_are_characters_and_feed_the_ranking() -> None:
+    """The whole point: which component dominates (plan.md R2)."""
+    m = meter_mod.Meter()
+    m.record_sizes(
+        purpose=meter_mod.CODE,
+        sizes=meter_mod.component_sizes(
+            [
+                {"role": "system", "content": "S" * 4000},
+                {"role": "user", "content": "h" * 12000},
+                {"role": "system", "content": "K" * 800},
+            ]
+        ),
+    )
+    assert m.largest_component() == "history"
+    (record,) = m.size_records
+    assert record.unit == "characters"
+
+
+# ------------------------------------------------------------------------------
 # 5. The empty session, and the meter's degradation contract
 # ------------------------------------------------------------------------------
 
